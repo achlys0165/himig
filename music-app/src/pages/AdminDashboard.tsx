@@ -66,7 +66,7 @@ const AdminDashboard: React.FC = () => {
       {/* Metric Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {[
-          { label: 'Vault Repertoire', value: stats.totalSongs, icon: Music, color: 'white' },
+          { label: 'Song Vault', value: stats.totalSongs, icon: Music, color: 'white' },
           { label: 'Active Team', value: stats.totalTeam, icon: Users, color: 'white' },
           { label: 'Confirmed Duties', value: stats.acceptedAssignments, icon: CheckCircle, color: 'green-500' },
           { label: 'Awaiting Response', value: stats.pendingResponses, icon: Clock, color: 'yellow-500' },

@@ -36,6 +36,31 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [latestNotification, setLatestNotification] = useState<Notification | null>(null);
   const [lastCheckedNotificationId, setLastCheckedNotificationId] = useState<string | null>(null);
 
+  // Send browser push notification
+  const sendPushNotification = async (title: string, body: string) => {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    
+    // Show native notification
+    new Notification(title, {
+      body,
+      icon: '/icon-192x192.png',
+      badge: '/badge-72x72.png',
+      tag: 'himig-notification',
+    });
+
+    // Also try service worker for background notifications
+    if ('serviceWorker' in navigator) {
+      const registration = await navigator.serviceWorker.ready;
+      registration.showNotification(title, {
+        body,
+        icon: '/icon-192x192.png',
+        badge: '/badge-72x72.png',
+        tag: 'himig-notification',
+        requireInteraction: true,
+      });
+    }
+  };
+
   const fetchSongs = useCallback(async () => {
     try {
       const { rows } = await turso.execute({
@@ -127,11 +152,15 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         created_at: row.created_at
       }));
       
+      // Check for new notifications
       if (typedNotifications.length > 0) {
         const latest = typedNotifications[0];
         if (lastCheckedNotificationId && latest.id !== lastCheckedNotificationId && !latest.read) {
           setLatestNotification(latest);
           setShowNotificationPopup(true);
+          
+          // Send browser push notification
+          sendPushNotification('HIMIG - New Assignment', latest.message);
         }
         setLastCheckedNotificationId(latest.id);
       }
@@ -142,12 +171,24 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [user, lastCheckedNotificationId]);
 
+  // Listen for real-time refresh events
+  useEffect(() => {
+    const handleRefresh = () => {
+      if (user) {
+        fetchNotifications();
+      }
+    };
+    
+    window.addEventListener('refresh-data', handleRefresh);
+    return () => window.removeEventListener('refresh-data', handleRefresh);
+  }, [user, fetchNotifications]);
+
   useEffect(() => {
     if (!user) return;
     
     const interval = setInterval(() => {
       fetchNotifications();
-    }, 10000);
+    }, 2000); // 2 second polling for real-time feel
     
     return () => clearInterval(interval);
   }, [user, fetchNotifications]);
@@ -197,8 +238,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         ]
       });
       
+      // Notify all users
       const { rows: users } = await turso.execute({
-        sql: 'SELECT id FROM users'
+        sql: 'SELECT id FROM users WHERE is_active = 1'
       });
       
       for (const u of users) {
@@ -213,6 +255,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             false
           ]
         });
+        
+        // Send push notification
+        sendPushNotification('HIMIG - New Song', `New song added: ${songData.title}`);
       }
       
       await fetchSongs();
@@ -247,22 +292,32 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         ]
       });
     
+      // Get musician details for notification
+      const { rows: musicianRows } = await turso.execute({
+        sql: 'SELECT name, email FROM users WHERE id = ?',
+        args: [assignment.musician_id]
+      });
+      
+      const musicianName = (musicianRows[0] as any)?.name || 'Musician';
+    
       const notifId = 'notif-' + Date.now();
-      try {
-        await turso.execute({
-          sql: `INSERT INTO notifications (id, user_id, message, type, read, created_at) 
+      await turso.execute({
+        sql: `INSERT INTO notifications (id, user_id, message, type, read, created_at) 
               VALUES (?, ?, ?, ?, ?, datetime('now'))`,
-          args: [
-            notifId,
-            assignment.musician_id,
-            `You have been assigned as ${assignment.role} on ${assignment.date}`,
-            'info',
-            false
-          ]
-        });
-      } catch (notifError) {
-        console.error('Notification creation failed:', notifError);
-      }
+        args: [
+          notifId,
+          assignment.musician_id,
+          `You have been assigned as ${assignment.role} on ${assignment.date}`,
+          'info',
+          false
+        ]
+      });
+
+      // Send push notification to assigned musician
+      sendPushNotification(
+        'HIMIG - New Assignment', 
+        `You have been assigned as ${assignment.role} on ${assignment.date}`
+      );
     
       await fetchSchedules();
       await fetchNotifications();
@@ -290,21 +345,17 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         args: [scheduleId]
       });
       
-      try {
-        await turso.execute({
-          sql: `INSERT INTO notifications (id, user_id, message, type, read, created_at) 
-                VALUES (?, ?, ?, ?, ?, datetime('now'))`,
-          args: [
-            'notif-' + Date.now(),
-            schedule.musician_id,
-            `Your assignment as ${schedule.role} on ${schedule.date} has been removed`,
-            'warning',
-            false
-          ]
-        });
-      } catch (notifError) {
-        console.error('Notification creation failed:', notifError);
-      }
+      await turso.execute({
+        sql: `INSERT INTO notifications (id, user_id, message, type, read, created_at) 
+              VALUES (?, ?, ?, ?, ?, datetime('now'))`,
+        args: [
+          'notif-' + Date.now(),
+          schedule.musician_id,
+          `Your assignment as ${schedule.role} on ${schedule.date} has been removed`,
+          'warning',
+          false
+        ]
+      });
       
       await fetchSchedules();
       await fetchNotifications();
@@ -316,15 +367,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const updateScheduleStatus = async (scheduleId: string, status: ScheduleStatus, declineReason?: string) => {
     try {
-      console.log('Updating schedule:', { scheduleId, status, declineReason });
-      
-      // Update with decline reason if provided
       await turso.execute({
         sql: 'UPDATE schedules SET status = ?, decline_reason = ? WHERE id = ?',
         args: [status, declineReason || null, scheduleId]
       });
       
-      // Fetch updated schedule with musician info
       const { rows } = await turso.execute({
         sql: `SELECT s.*, u.name as musician_name, u.id as musician_id 
               FROM schedules s 
@@ -341,8 +388,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       // Notify admins
       const { rows: admins } = await turso.execute({
-        sql: 'SELECT id FROM users WHERE role = ?',
-        args: ['admin']
+        sql: "SELECT id FROM users WHERE role IN ('admin', 'super_admin')"
       });
       
       for (const admin of admins) {
@@ -354,26 +400,21 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           message += `. Reason: ${declineReason}`;
         }
         
-        try {
-          await turso.execute({
-            sql: `INSERT INTO notifications (id, user_id, message, type, read, created_at) 
-                  VALUES (?, ?, ?, ?, ?, datetime('now'))`,
-            args: [
-              notifId,
-              adminId,
-              message,
-              'info',
-              false
-            ]
-          });
-        } catch (notifError) {
-          console.error('Failed to create admin notification:', notifError);
-        }
+        await turso.execute({
+          sql: `INSERT INTO notifications (id, user_id, message, type, read, created_at) 
+                VALUES (?, ?, ?, ?, ?, datetime('now'))`,
+          args: [
+            notifId,
+            adminId,
+            message,
+            'info',
+            false
+          ]
+        });
       }
       
       await fetchSchedules();
       await fetchNotifications();
-      console.log('Schedule updated successfully');
     } catch (error) {
       console.error('Error in updateScheduleStatus:', error);
       throw error;
@@ -409,7 +450,27 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
       }
       
+      // Notify all users about setlist update
+      const { rows: users } = await turso.execute({
+        sql: 'SELECT id FROM users WHERE is_active = 1'
+      });
+      
+      for (const u of users) {
+        await turso.execute({
+          sql: `INSERT INTO notifications (id, user_id, message, type, read, created_at) 
+                VALUES (?, ?, ?, ?, ?, datetime('now'))`,
+          args: [
+            'notif-' + Date.now() + '-' + (u as any).id,
+            (u as any).id,
+            `Setlist updated for ${setlistData.date}`,
+            'info',
+            false
+          ]
+        });
+      }
+      
       await fetchSetlists();
+      await fetchNotifications();
     } catch (error) {
       console.error('Error updating setlist:', error);
       throw error;

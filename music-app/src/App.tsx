@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { DataProvider } from './contexts/DataContext';
@@ -19,11 +19,13 @@ import SetlistPage from './pages/SetlistPage';
 import SearchPage from './pages/SearchPage';
 import NotificationsPage from './pages/NotificationsPage';
 import SettingsPage from './pages/SettingsPage';
+import SuperAdminDashboard from './pages/SuperAdminDashboard';
 
 // Protected Route Component
-const ProtectedRoute: React.FC<{ children: React.ReactNode; adminOnly?: boolean }> = ({ 
+const ProtectedRoute: React.FC<{ children: React.ReactNode; adminOnly?: boolean; superAdminOnly?: boolean }> = ({ 
   children, 
-  adminOnly = false 
+  adminOnly = false,
+  superAdminOnly = false
 }) => {
   const { user, loading } = useAuth();
 
@@ -35,7 +37,11 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; adminOnly?: boolean 
     return <Navigate to="/" replace />;
   }
 
-  if (adminOnly && user.role !== 'admin') {
+  if (superAdminOnly && user.role !== 'super_admin') {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  if (adminOnly && !['admin', 'super_admin'].includes(user.role)) {
     return <Navigate to="/dashboard" replace />;
   }
 
@@ -43,7 +49,10 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; adminOnly?: boolean 
 };
 
 // Layout Wrapper for protected routes
-const ProtectedLayout: React.FC<{ adminOnly?: boolean }> = ({ adminOnly = false }) => {
+const ProtectedLayout: React.FC<{ adminOnly?: boolean; superAdminOnly?: boolean }> = ({ 
+  adminOnly = false,
+  superAdminOnly = false
+}) => {
   const { user, loading } = useAuth();
 
   if (loading) {
@@ -54,7 +63,11 @@ const ProtectedLayout: React.FC<{ adminOnly?: boolean }> = ({ adminOnly = false 
     return <Navigate to="/" replace />;
   }
 
-  if (adminOnly && user.role !== 'admin') {
+  if (superAdminOnly && user.role !== 'super_admin') {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  if (adminOnly && !['admin', 'super_admin'].includes(user.role)) {
     return <Navigate to="/dashboard" replace />;
   }
 
@@ -74,7 +87,7 @@ const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   }
 
   if (user) {
-    return <Navigate to={user.role === 'admin' ? '/admin' : '/dashboard'} replace />;
+    return <Navigate to={user.role === 'super_admin' ? '/super-admin' : user.role === 'admin' ? '/admin' : '/dashboard'} replace />;
   }
 
   return <>{children}</>;
@@ -102,6 +115,13 @@ const AppRoutes: React.FC = () => {
         <Route path="/admin" element={<AdminDashboard />} />
         <Route path="/admin-schedule" element={<AdminSchedule />} />
         <Route path="/admin-songs" element={<AdminSongs />} />
+      </Route>
+
+      {/* Super Admin Routes */}
+      <Route element={<ProtectedLayout superAdminOnly />}>
+        <Route path="/super-admin" element={<SuperAdminDashboard />} />
+        <Route path="/super-admin/users" element={<SuperAdminDashboard />} />
+        <Route path="/super-admin/logs" element={<SuperAdminDashboard />} />
       </Route>
 
       {/* Catch all - redirect to root */}

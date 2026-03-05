@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
   LayoutDashboard, Calendar, Music, Search, Bell, 
-  Settings, LogOut, Menu, X
+  Settings, LogOut, Menu, X, Shield, Users, FileText, ChevronRight
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
@@ -14,11 +14,49 @@ interface LayoutProps {
 
 const Layout: React.FC<LayoutProps> = ({ children }) => {
   const { user, logout } = useAuth();
-  const { showNotificationPopup, latestNotification, dismissNotificationPopup } = useData();
+  const { showNotificationPopup, latestNotification, dismissNotificationPopup, notifications } = useData();
   const location = useLocation();
   const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+
+  // Real-time notifications - faster polling
+  useEffect(() => {
+    if (!user) return;
+    
+    // Poll every 2 seconds for real-time feel
+    const interval = setInterval(() => {
+      // This will trigger DataContext to refresh
+      window.dispatchEvent(new CustomEvent('refresh-data'));
+    }, 2000);
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        window.dispatchEvent(new CustomEvent('refresh-data'));
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [user]);
+
+  // Push notification setup
+  useEffect(() => {
+    if (!user || !('Notification' in window)) return;
+    
+    // Request permission on load
+    if (Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+
+    // Register service worker for push
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/service-worker.js').catch(console.error);
+    }
+  }, [user]);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -38,10 +76,28 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   const handleLogout = async () => {
     await logout();
-    navigate('/login');
+    navigate('/');
   };
 
-  const isAdmin = user?.role === UserRole.ADMIN;
+  const isSuperAdmin = user?.role === UserRole.SUPER_ADMIN;
+  const isAdmin = user?.role === UserRole.ADMIN || isSuperAdmin;
+
+  // Calculate unread count
+  const unreadCount = useMemo(() => {
+    return notifications.filter(n => !n.read && n.user_id === user?.id).length;
+  }, [notifications, user?.id]);
+
+  const superAdminNav = [
+    { name: 'Super Admin', path: '/super-admin', icon: Shield },
+    { name: 'User Management', path: '/super-admin/users', icon: Users },
+    { name: 'System Logs', path: '/super-admin/logs', icon: FileText },
+    { name: 'Admin Dashboard', path: '/admin', icon: LayoutDashboard },
+    { name: 'Team Schedule', path: '/admin-schedule', icon: Calendar },
+    { name: 'Song Vault', path: '/admin-songs', icon: Music },
+    { name: 'Setlists', path: '/setlist', icon: Music },
+    { name: 'Search', path: '/search', icon: Search },
+    { name: 'Notifications', path: '/notifications', icon: Bell, badge: unreadCount },
+  ];
 
   const adminNav = [
     { name: 'Admin Dashboard', path: '/admin', icon: LayoutDashboard },
@@ -49,7 +105,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { name: 'Song Vault', path: '/admin-songs', icon: Music },
     { name: 'Setlists', path: '/setlist', icon: Music },
     { name: 'Search', path: '/search', icon: Search },
-    { name: 'Notifications', path: '/notifications', icon: Bell },
+    { name: 'Notifications', path: '/notifications', icon: Bell, badge: unreadCount },
   ];
 
   const musicianNav = [
@@ -57,10 +113,20 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { name: 'My Schedule', path: '/schedule', icon: Calendar },
     { name: 'Setlists', path: '/setlist', icon: Music },
     { name: 'Search', path: '/search', icon: Search },
-    { name: 'Notifications', path: '/notifications', icon: Bell },
+    { name: 'Notifications', path: '/notifications', icon: Bell, badge: unreadCount },
   ];
 
-  const navItems = isAdmin ? adminNav : musicianNav;
+  const navItems = isSuperAdmin ? superAdminNav : isAdmin ? adminNav : musicianNav;
+
+  // Handle notification popup click
+  const handleNotificationClick = () => {
+    dismissNotificationPopup();
+    if (latestNotification?.message.toLowerCase().includes('assigned')) {
+      navigate('/schedule');
+    } else {
+      navigate('/notifications');
+    }
+  };
 
   if (!user) {
     return (
@@ -110,23 +176,37 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = location.pathname === item.path;
+            const hasBadge = item.badge && item.badge > 0;
+            
             return (
               <Link
                 key={item.path}
                 to={item.path}
                 onClick={() => isMobile && setIsSidebarOpen(false)}
                 className={`
-                  flex items-center gap-4 px-4 py-3.5 rounded-xl transition-all
+                  flex items-center gap-4 px-4 py-3.5 rounded-xl transition-all relative
                   ${isActive 
                     ? 'bg-white text-black font-bold shadow-lg' 
                     : 'text-white/60 hover:text-white hover:bg-white/5'
                   }
                 `}
               >
-                <Icon size={22} />
-                <span className="text-sm font-medium">
+                <div className="relative">
+                  <Icon size={22} />
+                  {hasBadge && (
+                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[9px] font-black rounded-full flex items-center justify-center animate-pulse">
+                      {item.badge > 9 ? '9+' : item.badge}
+                    </span>
+                  )}
+                </div>
+                <span className="text-sm font-medium flex-1">
                   {item.name}
                 </span>
+                {hasBadge && isMobile && (
+                  <span className="text-[10px] font-black text-red-400">
+                    {item.badge} NEW
+                  </span>
+                )}
               </Link>
             );
           })}
@@ -176,10 +256,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
               <div className="hidden sm:block">
                 <h2 className="text-xs font-black uppercase tracking-widest text-white/40">
-                  {isAdmin ? 'Administrator' : 'Musician'}
+                  {isSuperAdmin ? 'Super Administrator' : isAdmin ? 'Administrator' : 'Musician'}
                 </h2>
                 <p className="text-sm font-bold text-white">
-                  {location.pathname === '/admin' ? 'ADMIN DASHBOARD' :
+                  {location.pathname === '/super-admin' ? 'SUPER ADMIN' :
+                   location.pathname === '/admin' ? 'ADMIN DASHBOARD' :
                    location.pathname === '/admin-schedule' ? 'TEAM SCHEDULE' :
                    location.pathname === '/admin-songs' ? 'SONG VAULT' :
                    location.pathname.substring(1).replace(/-/g, ' ').toUpperCase() || 'DASHBOARD'}
@@ -188,10 +269,18 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
            </div>
            
            <div className="flex items-center gap-3">
+              {/* Notification bell in header */}
+              <Link to="/notifications" className="relative p-2 text-white/60 hover:text-white transition-colors">
+                <Bell size={20} />
+                {unreadCount > 0 && (
+                  <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse" />
+                )}
+              </Link>
+              
               <div className="text-right hidden sm:block">
                 <p className="text-sm font-bold leading-none">{user?.name}</p>
                 <p className="text-[10px] text-white/30 uppercase tracking-widest mt-0.5">
-                  {isAdmin ? 'Admin Access' : 'Team Member'}
+                  {isSuperAdmin ? 'Super Admin' : isAdmin ? 'Admin Access' : 'Team Member'}
                 </p>
               </div>
               <div className="w-10 h-10 rounded-full bg-gradient-to-br from-white to-white/70 text-black flex items-center justify-center text-sm font-black italic shadow-lg">
@@ -207,11 +296,13 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         </main>
       </div>
 
-      {/* Notification Popup */}
-      {/* Mobile-Friendly Notification Popup */}
+      {/* Clickable Notification Popup */}
       {showNotificationPopup && latestNotification && (
-        <div className="fixed top-16 sm:top-20 left-4 right-4 sm:left-auto sm:right-4 z-[60] animate-slide-in-right">
-          <div className="bg-[#0a0a0a] border border-white/20 rounded-2xl p-4 shadow-2xl shadow-white/10 max-w-sm sm:w-80 mx-auto sm:mx-0">
+        <div 
+          onClick={handleNotificationClick}
+          className="fixed top-16 sm:top-20 left-4 right-4 sm:left-auto sm:right-4 z-[60] animate-slide-in-right cursor-pointer hover:scale-[1.02] transition-transform"
+        >
+          <div className="bg-[#0a0a0a] border border-white/20 rounded-2xl p-4 shadow-2xl shadow-white/10 max-w-sm sm:w-80 mx-auto sm:mx-0 hover:border-white/40 transition-colors">
             <div className="flex items-start gap-3">
               <div className="p-2 bg-white/10 rounded-xl shrink-0">
                 <Bell size={18} className="text-white" />
@@ -220,7 +311,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 <div className="flex items-center justify-between gap-2 mb-1">
                   <p className="text-[10px] font-black uppercase tracking-widest text-white/40">New Notification</p>
                   <button 
-                    onClick={dismissNotificationPopup}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      dismissNotificationPopup();
+                    }}
                     className="p-1 text-white/40 hover:text-white transition-colors shrink-0"
                   >
                     <X size={14} />
@@ -229,8 +323,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 <p className="text-sm font-bold text-white leading-tight">
                   {latestNotification.message}
                 </p>
-                <p className="text-[10px] text-white/30 mt-1">
-                  {new Date(latestNotification.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                <p className="text-[10px] text-white/30 mt-1 flex items-center gap-1">
+                  <span>Click to view</span>
+                  <ChevronRight size={10} />
                 </p>
               </div>
             </div>

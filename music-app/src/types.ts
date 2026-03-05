@@ -1,16 +1,18 @@
 // User & Authentication
+export enum UserRole {
+  SUPER_ADMIN = 'super_admin',
+  ADMIN = 'admin',
+  MUSICIAN = 'musician'
+}
+
 export interface User {
   id: string;
   username: string;
   name: string;
   email?: string;
-  role: 'admin' | 'musician';
+  role: 'super_admin' | 'admin' | 'musician';
   instrument?: string;
-}
-
-export enum UserRole {
-  ADMIN = 'admin',
-  MUSICIAN = 'musician'
+  is_active?: boolean;
 }
 
 // Songs

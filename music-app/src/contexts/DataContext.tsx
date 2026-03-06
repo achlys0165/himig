@@ -59,6 +59,45 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // Send email notification via API
+  const sendEmailNotification = async (to: string, subject: string, message: string) => {
+    try {
+      if (!to) return;
+      
+      await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to,
+          subject,
+          text: message,
+          html: `
+            <div style="background:#000;color:#fff;padding:40px;font-family:Arial,sans-serif;max-width:600px;">
+              <div style="text-align:center;margin-bottom:30px;">
+                <div style="width:60px;height:60px;background:#fff;border-radius:16px;display:inline-flex;align-items:center;justify-content:center;">
+                  <span style="color:#000;font-size:32px;font-weight:900;font-style:italic;">H</span>
+                </div>
+                <h1 style="font-size:28px;font-weight:900;font-style:italic;margin:20px 0 0;">HIMIG</h1>
+                <p style="color:#666;font-size:12px;letter-spacing:3px;text-transform:uppercase;">TOP Music Ministry</p>
+              </div>
+              <div style="background:#0a0a0a;border:1px solid #333;border-radius:20px;padding:30px;">
+                <h2 style="font-size:18px;margin-bottom:20px;">${subject}</h2>
+                <p style="color:#ccc;line-height:1.6;">${message.replace(/\n/g, '<br>')}</p>
+                <div style="margin-top:30px;padding-top:20px;border-top:1px solid #333;">
+                  <p style="color:#666;font-size:12px;">This is an automated notification from the HIMIG Music Ministry system.</p>
+                  <a href="https://top-himig.vercel.app" style="display:inline-block;margin-top:15px;padding:12px 24px;background:#fff;color:#000;text-decoration:none;border-radius:8px;font-weight:bold;font-size:12px;text-transform:uppercase;letter-spacing:1px;">Open HIMIG</a>
+                </div>
+              </div>
+            </div>
+          `
+        })
+      });
+    } catch (error) {
+      console.error('Email send failed:', error);
+      // Don't throw - email is non-critical
+    }
+  };
+
   const fetchSongs = useCallback(async () => {
     try {
       const { rows } = await turso.execute({
@@ -233,23 +272,35 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
       
       const { rows: users } = await turso.execute({
-        sql: 'SELECT id FROM users WHERE is_active = 1'
+        sql: 'SELECT id, email, name FROM users WHERE is_active = 1'
       });
       
+      const message = `New song added to the library: "${songData.title}" (${songData.category}, Key: ${songData.original_key})`;
+      
       for (const u of users) {
+        const userData = u as any;
+        
         await turso.execute({
           sql: `INSERT INTO notifications (id, user_id, message, type, read, created_at) 
                 VALUES (?, ?, ?, ?, ?, datetime('now'))`,
           args: [
-            'notif-' + Date.now() + '-' + (u as any).id,
-            (u as any).id,
-            `New song added: ${songData.title}`,
+            'notif-' + Date.now() + '-' + userData.id,
+            userData.id,
+            message,
             'info',
             false
           ]
         });
         
-        sendPushNotification('HIMIG - New Song', `New song added: ${songData.title}`);
+        sendPushNotification('HIMIG - New Song', message);
+        
+        if (userData.email) {
+          await sendEmailNotification(
+            userData.email,
+            'New Song Added - HIMIG',
+            `Hi ${userData.name},\n\nA new song has been added to the HIMIG library:\n\nTitle: ${songData.title}\nCategory: ${songData.category}\nKey: ${songData.original_key}\n\nLog in to view the full details and lyrics.\n\nBest regards,\nTOP Music Ministry Team`
+          );
+        }
       }
       
       await fetchSongs();
@@ -289,25 +340,34 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         args: [assignment.musician_id]
       });
       
-      const musicianName = (musicianRows[0] as any)?.name || 'Musician';
+      const musician = musicianRows[0] as any;
+      const musicianName = musician?.name || 'Musician';
+      const musicianEmail = musician?.email;
     
       const notifId = 'notif-' + Date.now();
+      const message = `You have been assigned as ${assignment.role} on ${assignment.date}`;
+      
       await turso.execute({
         sql: `INSERT INTO notifications (id, user_id, message, type, read, created_at) 
               VALUES (?, ?, ?, ?, ?, datetime('now'))`,
         args: [
           notifId,
           assignment.musician_id,
-          `You have been assigned as ${assignment.role} on ${assignment.date}`,
+          message,
           'info',
           false
         ]
       });
 
-      sendPushNotification(
-        'HIMIG - New Assignment', 
-        `You have been assigned as ${assignment.role} on ${assignment.date}`
-      );
+      sendPushNotification('HIMIG - New Assignment', message);
+      
+      if (musicianEmail) {
+        await sendEmailNotification(
+          musicianEmail,
+          'New Assignment - HIMIG Music Ministry',
+          `Hi ${musicianName},\n\nYou have been assigned as ${assignment.role} for the service on ${assignment.date}.\n\nPlease log in to HIMIG to accept or decline this assignment.\n\nBest regards,\nTOP Music Ministry Team`
+        );
+      }
     
       await fetchSchedules();
       await fetchNotifications();
@@ -363,7 +423,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
       
       const { rows } = await turso.execute({
-        sql: `SELECT s.*, u.name as musician_name, u.id as musician_id 
+        sql: `SELECT s.*, u.name as musician_name, u.id as musician_id, u.email as musician_email
               FROM schedules s 
               JOIN users u ON s.musician_id = u.id 
               WHERE s.id = ?`,
@@ -377,29 +437,37 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const schedule = rows[0] as any;
       
       const { rows: admins } = await turso.execute({
-        sql: "SELECT id FROM users WHERE role IN ('admin', 'super_admin')"
+        sql: "SELECT id, email, name FROM users WHERE role IN ('admin', 'super_admin')"
       });
       
+      let message = `${schedule.musician_name} ${status} the assignment for ${schedule.role} on ${schedule.date}`;
+      if (status === ScheduleStatus.REJECTED && declineReason) {
+        message += `. Reason: ${declineReason}`;
+      }
+      
       for (const admin of admins) {
-        const adminId = (admin as any).id;
-        const notifId = 'notif-' + Date.now() + '-' + adminId;
-        
-        let message = `${schedule.musician_name} ${status} the assignment for ${schedule.role} on ${schedule.date}`;
-        if (status === ScheduleStatus.REJECTED && declineReason) {
-          message += `. Reason: ${declineReason}`;
-        }
+        const adminData = admin as any;
+        const notifId = 'notif-' + Date.now() + '-' + adminData.id;
         
         await turso.execute({
           sql: `INSERT INTO notifications (id, user_id, message, type, read, created_at) 
                 VALUES (?, ?, ?, ?, ?, datetime('now'))`,
           args: [
             notifId,
-            adminId,
+            adminData.id,
             message,
             'info',
             false
           ]
         });
+
+        if (adminData.email) {
+          await sendEmailNotification(
+            adminData.email,
+            `Assignment ${status} - HIMIG`,
+            `Hi ${adminData.name},\n\n${message}.\n\n${status === ScheduleStatus.REJECTED && declineReason ? `Reason provided: ${declineReason}\n\n` : ''}Please check the schedule for updates.\n\nBest regards,\nHIMIG System`
+          );
+        }
       }
       
       await fetchSchedules();
@@ -440,16 +508,18 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       
       const { rows: users } = await turso.execute({
-        sql: 'SELECT id FROM users WHERE is_active = 1'
+        sql: 'SELECT id, email, name FROM users WHERE is_active = 1'
       });
       
       for (const u of users) {
+        const userData = u as any;
+        
         await turso.execute({
           sql: `INSERT INTO notifications (id, user_id, message, type, read, created_at) 
                 VALUES (?, ?, ?, ?, ?, datetime('now'))`,
           args: [
-            'notif-' + Date.now() + '-' + (u as any).id,
-            (u as any).id,
+            'notif-' + Date.now() + '-' + userData.id,
+            userData.id,
             `Setlist updated for ${setlistData.date}`,
             'info',
             false

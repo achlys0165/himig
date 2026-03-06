@@ -76,6 +76,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const isSuperAdmin = user?.role === UserRole.SUPER_ADMIN;
   const isAdmin = user?.role === UserRole.ADMIN || isSuperAdmin;
 
+  const hasUnread = useMemo(() => {
+    return notifications.some(n => !n.read && n.user_id === user?.id);
+  }, [notifications, user?.id]);
+
   const unreadCount = useMemo(() => {
     return notifications.filter(n => !n.read && n.user_id === user?.id).length;
   }, [notifications, user?.id]);
@@ -89,7 +93,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { name: 'Song Vault', path: '/admin-songs', icon: Music },
     { name: 'Setlists', path: '/setlist', icon: Music },
     { name: 'Search', path: '/search', icon: Search },
-    { name: 'Notifications', path: '/notifications', icon: Bell, badge: unreadCount },
+    { name: 'Notifications', path: '/notifications', icon: Bell, hasUnread },
   ];
 
   const adminNav = [
@@ -98,7 +102,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { name: 'Song Vault', path: '/admin-songs', icon: Music },
     { name: 'Setlists', path: '/setlist', icon: Music },
     { name: 'Search', path: '/search', icon: Search },
-    { name: 'Notifications', path: '/notifications', icon: Bell, badge: unreadCount },
+    { name: 'Notifications', path: '/notifications', icon: Bell, hasUnread },
   ];
 
   const musicianNav = [
@@ -106,7 +110,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { name: 'My Schedule', path: '/schedule', icon: Calendar },
     { name: 'Setlists', path: '/setlist', icon: Music },
     { name: 'Search', path: '/search', icon: Search },
-    { name: 'Notifications', path: '/notifications', icon: Bell, badge: unreadCount },
+    { name: 'Notifications', path: '/notifications', icon: Bell, hasUnread },
   ];
 
   const navItems = isSuperAdmin ? superAdminNav : isAdmin ? adminNav : musicianNav;
@@ -168,7 +172,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = location.pathname === item.path;
-            const hasBadge = item.badge && item.badge > 0;
+            const showUnreadDot = item.hasUnread;
             
             return (
               <Link
@@ -185,18 +189,18 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               >
                 <div className="relative">
                   <Icon size={22} />
-                  {hasBadge && (
-                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[9px] font-black rounded-full flex items-center justify-center animate-pulse">
-                      {item.badge > 9 ? '9+' : item.badge}
-                    </span>
+                  {/* Simple red dot on icon - no number */}
+                  {showUnreadDot && (
+                    <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-red-500 rounded-full ring-2 ring-[#050505]" />
                   )}
                 </div>
                 <span className="text-sm font-medium flex-1">
                   {item.name}
                 </span>
-                {hasBadge && isMobile && (
-                  <span className="text-[10px] font-black text-red-400">
-                    {item.badge} NEW
+                {/* Show count badge for Notifications only */}
+                {showUnreadDot && item.name === 'Notifications' && (
+                  <span className="text-[10px] font-black text-red-400 bg-red-500/10 px-2 py-0.5 rounded-full">
+                    {unreadCount}
                   </span>
                 )}
               </Link>
@@ -261,10 +265,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
            </div>
            
            <div className="flex items-center gap-3">
+              {/* Header bell with simple dot */}
               <Link to="/notifications" className="relative p-2 text-white/60 hover:text-white transition-colors">
                 <Bell size={20} />
-                {unreadCount > 0 && (
-                  <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse" />
+                {hasUnread && (
+                  <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full ring-2 ring-black" />
                 )}
               </Link>
               
@@ -287,6 +292,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         </main>
       </div>
 
+      {/* Clickable Notification Popup */}
       {showNotificationPopup && latestNotification && (
         <div 
           onClick={handleNotificationClick}

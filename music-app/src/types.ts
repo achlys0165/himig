@@ -1,10 +1,4 @@
 // User & Authentication
-export enum UserRole {
-  SUPER_ADMIN = 'super_admin',
-  ADMIN = 'admin',
-  MUSICIAN = 'musician'
-}
-
 export interface User {
   id: string;
   username: string;
@@ -14,6 +8,13 @@ export interface User {
   instrument?: string;
   is_active?: boolean;
 }
+
+// User Role constants
+export const UserRole = {
+  SUPER_ADMIN: 'super_admin',
+  ADMIN: 'admin',
+  MUSICIAN: 'musician'
+} as const;
 
 // Songs
 export interface Song {
@@ -28,13 +29,16 @@ export interface Song {
   created_at: string;
 }
 
-// Schedules
-export enum ScheduleStatus {
-  PENDING = 'pending',
-  ACCEPTED = 'accepted',
-  REJECTED = 'rejected'
-}
+// Schedule Status constants
+export const ScheduleStatus = {
+  PENDING: 'pending',
+  ACCEPTED: 'accepted',
+  REJECTED: 'rejected'
+} as const;
 
+export type ScheduleStatusType = typeof ScheduleStatus[keyof typeof ScheduleStatus];
+
+// Schedules
 export interface Schedule {
   id: string;
   date: string;
@@ -45,7 +49,7 @@ export interface Schedule {
     instrument?: string;
   };
   role: string;
-  status: ScheduleStatus;
+  status: ScheduleStatusType;
   decline_reason?: string;
   created_at: string;
 }
@@ -59,8 +63,8 @@ export interface Setlist {
   created_at: string;
 }
 
-// Notifications
-export interface Notification {
+// App Notification - renamed to avoid conflict with DOM Notification
+export interface AppNotification {
   id: string;
   user_id: string;
   message: string;

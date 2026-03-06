@@ -1,23 +1,23 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { turso } from '../lib/turso';
-import { Song, Schedule, Setlist, Notification, ScheduleStatus } from '../types';
+import { Song, Schedule, Setlist, AppNotification, ScheduleStatus, ScheduleStatusType } from '../types';
 import { useAuth } from './AuthContext';
 
 interface DataContextType {
   songs: Song[];
   schedules: Schedule[];
   setlists: Setlist[];
-  notifications: Notification[];
+  notifications: AppNotification[];
   loading: boolean;
   addSong: (song: Omit<Song, 'id' | 'created_at'>) => Promise<void>;
   assignMusician: (assignment: { musician_id: string; date: string; role: string }) => Promise<void>;
   removeSchedule: (scheduleId: string) => Promise<void>;
-  updateScheduleStatus: (scheduleId: string, status: ScheduleStatus, declineReason?: string) => Promise<void>;
+  updateScheduleStatus: (scheduleId: string, status: ScheduleStatusType, declineReason?: string) => Promise<void>;
   updateSetlist: (setlist: { date: string; song_ids: string[] | { song_id: string; category: string; order: number }[] }) => Promise<void>;
   markNotificationsRead: () => Promise<void>;
   refreshData: () => Promise<void>;
   showNotificationPopup: boolean;
-  latestNotification: Notification | null;
+  latestNotification: AppNotification | null;
   dismissNotificationPopup: () => void;
 }
 
@@ -29,18 +29,17 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [songs, setSongs] = useState<Song[]>([]);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [setlists, setSetlists] = useState<Setlist[]>([]);
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(true);
   
   const [showNotificationPopup, setShowNotificationPopup] = useState(false);
-  const [latestNotification, setLatestNotification] = useState<Notification | null>(null);
+  const [latestNotification, setLatestNotification] = useState<AppNotification | null>(null);
   const [lastCheckedNotificationId, setLastCheckedNotificationId] = useState<string | null>(null);
 
   // Send browser push notification
   const sendPushNotification = async (title: string, body: string) => {
     if (!('Notification' in window) || Notification.permission !== 'granted') return;
     
-    // Show native notification
     new Notification(title, {
       body,
       icon: '/icon-192x192.png',
@@ -48,7 +47,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       tag: 'himig-notification',
     });
 
-    // Also try service worker for background notifications
     if ('serviceWorker' in navigator) {
       const registration = await navigator.serviceWorker.ready;
       registration.showNotification(title, {
@@ -143,7 +141,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         args: [user.id]
       });
       
-      const typedNotifications: Notification[] = rows.map((row: any) => ({
+      const typedNotifications: AppNotification[] = rows.map((row: any) => ({
         id: row.id,
         user_id: row.user_id,
         message: row.message,
@@ -152,14 +150,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         created_at: row.created_at
       }));
       
-      // Check for new notifications
       if (typedNotifications.length > 0) {
         const latest = typedNotifications[0];
         if (lastCheckedNotificationId && latest.id !== lastCheckedNotificationId && !latest.read) {
           setLatestNotification(latest);
           setShowNotificationPopup(true);
-          
-          // Send browser push notification
           sendPushNotification('HIMIG - New Assignment', latest.message);
         }
         setLastCheckedNotificationId(latest.id);
@@ -171,7 +166,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [user, lastCheckedNotificationId]);
 
-  // Listen for real-time refresh events
   useEffect(() => {
     const handleRefresh = () => {
       if (user) {
@@ -188,7 +182,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     
     const interval = setInterval(() => {
       fetchNotifications();
-    }, 2000); // 2 second polling for real-time feel
+    }, 2000);
     
     return () => clearInterval(interval);
   }, [user, fetchNotifications]);
@@ -238,7 +232,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         ]
       });
       
-      // Notify all users
       const { rows: users } = await turso.execute({
         sql: 'SELECT id FROM users WHERE is_active = 1'
       });
@@ -256,7 +249,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           ]
         });
         
-        // Send push notification
         sendPushNotification('HIMIG - New Song', `New song added: ${songData.title}`);
       }
       
@@ -292,7 +284,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         ]
       });
     
-      // Get musician details for notification
       const { rows: musicianRows } = await turso.execute({
         sql: 'SELECT name, email FROM users WHERE id = ?',
         args: [assignment.musician_id]
@@ -313,7 +304,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         ]
       });
 
-      // Send push notification to assigned musician
       sendPushNotification(
         'HIMIG - New Assignment', 
         `You have been assigned as ${assignment.role} on ${assignment.date}`
@@ -365,7 +355,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const updateScheduleStatus = async (scheduleId: string, status: ScheduleStatus, declineReason?: string) => {
+  const updateScheduleStatus = async (scheduleId: string, status: ScheduleStatusType, declineReason?: string) => {
     try {
       await turso.execute({
         sql: 'UPDATE schedules SET status = ?, decline_reason = ? WHERE id = ?',
@@ -386,7 +376,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       const schedule = rows[0] as any;
       
-      // Notify admins
       const { rows: admins } = await turso.execute({
         sql: "SELECT id FROM users WHERE role IN ('admin', 'super_admin')"
       });
@@ -450,7 +439,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
       }
       
-      // Notify all users about setlist update
       const { rows: users } = await turso.execute({
         sql: 'SELECT id FROM users WHERE is_active = 1'
       });

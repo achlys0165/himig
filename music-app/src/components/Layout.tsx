@@ -20,13 +20,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
-  // Real-time notifications - faster polling
   useEffect(() => {
     if (!user) return;
     
-    // Poll every 2 seconds for real-time feel
     const interval = setInterval(() => {
-      // This will trigger DataContext to refresh
       window.dispatchEvent(new CustomEvent('refresh-data'));
     }, 2000);
 
@@ -43,16 +40,13 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     };
   }, [user]);
 
-  // Push notification setup
   useEffect(() => {
     if (!user || !('Notification' in window)) return;
     
-    // Request permission on load
     if (Notification.permission === 'default') {
       Notification.requestPermission();
     }
 
-    // Register service worker for push
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/service-worker.js').catch(console.error);
     }
@@ -82,7 +76,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const isSuperAdmin = user?.role === UserRole.SUPER_ADMIN;
   const isAdmin = user?.role === UserRole.ADMIN || isSuperAdmin;
 
-  // Calculate unread count
   const unreadCount = useMemo(() => {
     return notifications.filter(n => !n.read && n.user_id === user?.id).length;
   }, [notifications, user?.id]);
@@ -118,7 +111,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   const navItems = isSuperAdmin ? superAdminNav : isAdmin ? adminNav : musicianNav;
 
-  // Handle notification popup click
   const handleNotificationClick = () => {
     dismissNotificationPopup();
     if (latestNotification?.message.toLowerCase().includes('assigned')) {
@@ -269,7 +261,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
            </div>
            
            <div className="flex items-center gap-3">
-              {/* Notification bell in header */}
               <Link to="/notifications" className="relative p-2 text-white/60 hover:text-white transition-colors">
                 <Bell size={20} />
                 {unreadCount > 0 && (
@@ -296,7 +287,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         </main>
       </div>
 
-      {/* Clickable Notification Popup */}
       {showNotificationPopup && latestNotification && (
         <div 
           onClick={handleNotificationClick}

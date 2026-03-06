@@ -81,7 +81,6 @@ const SuperAdminDashboard: React.FC = () => {
         </p>
       </header>
 
-      {/* Stats Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
           { label: 'Total Users', value: stats.total, icon: Users },
@@ -97,7 +96,6 @@ const SuperAdminDashboard: React.FC = () => {
         ))}
       </div>
 
-      {/* Tabs */}
       <div className="flex gap-2 border-b border-white/10">
         {['users', 'stats'].map((tab) => (
           <button
@@ -114,7 +112,6 @@ const SuperAdminDashboard: React.FC = () => {
         ))}
       </div>
 
-      {/* Users Table */}
       {activeTab === 'users' && (
         <div className="bg-[#0a0a0a] border border-white/10 rounded-2xl overflow-hidden">
           <table className="w-full">
@@ -192,7 +189,6 @@ const SuperAdminDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* Stats View */}
       {activeTab === 'stats' && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="bg-[#0a0a0a] border border-white/10 p-6 rounded-2xl">

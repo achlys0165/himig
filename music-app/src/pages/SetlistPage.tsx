@@ -1,14 +1,14 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
-import { Music, ExternalLink, Plus, X, Check, Calendar } from 'lucide-react';
+import { Music, ExternalLink, Plus, X, Check, Calendar, ChevronLeft, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react';
 import SongDetailModal from '../components/SongDetailModal';
 import CalendarPicker from '../components/CalendarPicker';
 import { Song, UserRole } from '../types';
 import { useSearchParams } from 'react-router-dom';
 
-// 3 categories for setlist organization
-const SETLIST_CATEGORIES = ['Pre-Service', 'Choir', 'Worship'] as const;
+// 4 categories for setlist organization (added Special Number)
+const SETLIST_CATEGORIES = ['Pre-Service', 'Choir', 'Worship', 'Special Number'] as const;
 type SetlistCategory = typeof SETLIST_CATEGORIES[number];
 
 interface SetlistItem {
@@ -31,11 +31,20 @@ const SetlistPage: React.FC = () => {
   const [selectedDate, setSelectedDate] = useState<string>(dateFromUrl || '');
   const [activeTab, setActiveTab] = useState<SetlistCategory>('Worship');
   const [selectedSong, setSelectedSong] = useState<Song | null>(null);
+  const [currentSongIndex, setCurrentSongIndex] = useState<number>(0);
+  const [currentCategory, setCurrentCategory] = useState<SetlistCategory>('Worship');
   const [isEditing, setIsEditing] = useState(false);
   const [setlistItems, setSetlistItems] = useState<SetlistItem[]>([]);
   const [isSaving, setIsSaving] = useState(false);
+  // Track expanded categories (default all expanded)
+  const [expandedCategories, setExpandedCategories] = useState<Record<SetlistCategory, boolean>>({
+    'Pre-Service': true,
+    'Choir': true,
+    'Worship': true,
+    'Special Number': true
+  });
 
-  const isAdmin = user?.role === UserRole.ADMIN;
+  const isAdmin = user?.role === UserRole.ADMIN || user?.role === UserRole.SUPER_ADMIN;
 
   useEffect(() => {
     if (dateFromUrl) {
@@ -87,7 +96,8 @@ const SetlistPage: React.FC = () => {
     const grouped: Record<SetlistCategory, SongWithAssignment[]> = {
       'Pre-Service': [],
       'Choir': [],
-      'Worship': []
+      'Worship': [],
+      'Special Number': []
     };
     
     dateSongs.forEach(song => {
@@ -103,6 +113,11 @@ const SetlistPage: React.FC = () => {
     
     return grouped;
   }, [dateSongs]);
+
+  // Get current category songs for navigation
+  const currentCategorySongs = useMemo(() => {
+    return groupedByCategory[currentCategory] || [];
+  }, [groupedByCategory, currentCategory]);
 
   const availableSongs = useMemo(() => {
     const usedSongIds = setlistItems.map(item => item.song_id);
@@ -201,6 +216,20 @@ const SetlistPage: React.FC = () => {
     setSetlistItems(newItems);
   };
 
+  const toggleCategory = (category: SetlistCategory) => {
+    setExpandedCategories(prev => ({
+      ...prev,
+      [category]: !prev[category]
+    }));
+  };
+
+  // Enhanced song selection with category context
+  const handleSongClick = (song: SongWithAssignment, category: SetlistCategory) => {
+    setCurrentCategory(category);
+    setCurrentSongIndex(groupedByCategory[category].findIndex(s => s.id === song.id));
+    setSelectedSong(song);
+  };
+
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
     return date.toLocaleDateString('en-US', { 
@@ -283,7 +312,7 @@ const SetlistPage: React.FC = () => {
             <label className="text-[10px] uppercase tracking-widest text-white/40 font-bold mb-3 block">
               Add Songs To Category
             </label>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               {SETLIST_CATEGORIES.map(cat => (
                 <button
                   key={cat}
@@ -443,61 +472,94 @@ const SetlistPage: React.FC = () => {
               )}
             </div>
           ) : (
-            <div className="space-y-8">
+            <div className="space-y-4">
               {SETLIST_CATEGORIES.map(category => {
                 const categorySongs = groupedByCategory[category];
                 if (categorySongs.length === 0) return null;
 
+                const isExpanded = expandedCategories[category];
+
                 return (
-                  <div key={category} className="space-y-4">
-                    <h3 className="text-sm font-black uppercase tracking-widest text-white/40 border-b border-white/10 pb-2 flex items-center justify-between">
-                      {category}
-                      <span className="text-white/20 text-xs">{categorySongs.length} songs</span>
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {categorySongs.map((song, index) => (
-                        <div 
-                          key={song.id} 
-                          onClick={() => setSelectedSong(song)}
-                          className="group bg-[#0a0a0a] border border-white/10 p-5 rounded-2xl hover:border-white/40 hover:bg-white/[0.02] transition-all relative overflow-hidden cursor-pointer"
-                        >
-                          <div className="flex justify-between items-start mb-3">
-                            <div className="flex items-center gap-3">
-                              <span className="text-xl font-black italic text-white/20">{index + 1}</span>
-                              <div className="p-2 bg-white/5 rounded-lg group-hover:bg-white group-hover:text-black transition-all">
-                                <Music size={16} />
+                  <div 
+                    key={category} 
+                    className="bg-[#0a0a0a] border border-white/10 rounded-2xl overflow-hidden"
+                  >
+                    {/* Collapsible Header */}
+                    <button
+                      onClick={() => toggleCategory(category)}
+                      className="w-full p-4 flex items-center justify-between hover:bg-white/[0.02] transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <h3 className="text-sm font-black uppercase tracking-widest text-white/60">
+                          {category}
+                        </h3>
+                        <span className="text-white/20 text-xs bg-white/5 px-2 py-1 rounded-full">
+                          {categorySongs.length} songs
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-white/30 uppercase tracking-widest">
+                          {isExpanded ? 'Collapse' : 'Expand'}
+                        </span>
+                        {isExpanded ? (
+                          <ChevronUp size={18} className="text-white/40" />
+                        ) : (
+                          <ChevronDown size={18} className="text-white/40" />
+                        )}
+                      </div>
+                    </button>
+
+                    {/* Collapsible Content */}
+                    <div 
+                      className={`transition-all duration-300 ease-in-out overflow-hidden ${
+                        isExpanded ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'
+                      }`}
+                    >
+                      <div className="p-4 pt-0 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {categorySongs.map((song, index) => (
+                          <div 
+                            key={song.id} 
+                            onClick={() => handleSongClick(song, category)}
+                            className="group bg-black border border-white/5 p-5 rounded-2xl hover:border-white/40 hover:bg-white/[0.02] transition-all relative overflow-hidden cursor-pointer"
+                          >
+                            <div className="flex justify-between items-start mb-3">
+                              <div className="flex items-center gap-3">
+                                <span className="text-xl font-black italic text-white/20">{index + 1}</span>
+                                <div className="p-2 bg-white/5 rounded-lg group-hover:bg-white group-hover:text-black transition-all">
+                                  <Music size={16} />
+                                </div>
+                              </div>
+                              <div className="flex gap-2">
+                                {song.reference_url && (
+                                  <a 
+                                    href={song.reference_url} 
+                                    target="_blank" 
+                                    rel="noreferrer" 
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="p-1.5 text-white/30 hover:text-white transition-colors"
+                                  >
+                                    <ExternalLink size={14} />
+                                  </a>
+                                )}
+                                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30 border border-white/10 px-2 py-1 rounded">
+                                  {song.original_key}
+                                </span>
                               </div>
                             </div>
-                            <div className="flex gap-2">
-                              {song.reference_url && (
-                                <a 
-                                  href={song.reference_url} 
-                                  target="_blank" 
-                                  rel="noreferrer" 
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="p-1.5 text-white/30 hover:text-white transition-colors"
-                                >
-                                  <ExternalLink size={14} />
-                                </a>
-                              )}
-                              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30 border border-white/10 px-2 py-1 rounded">
-                                {song.original_key}
+                            <h3 className="text-base font-bold group-hover:translate-x-1 transition-transform truncate">{song.title}</h3>
+                            <div className="flex items-center gap-2 mt-3">
+                              <span className="text-[10px] text-white/40 uppercase tracking-widest px-2 py-1 bg-white/5 rounded">
+                                Vault: {song.category}
                               </span>
+                              {song.tempo && (
+                                <span className="text-[10px] text-white/40 uppercase tracking-widest px-2 py-1 bg-white/5 rounded">
+                                  {song.tempo}
+                                </span>
+                              )}
                             </div>
                           </div>
-                          <h3 className="text-base font-bold group-hover:translate-x-1 transition-transform truncate">{song.title}</h3>
-                          <div className="flex items-center gap-2 mt-3">
-                            <span className="text-[10px] text-white/40 uppercase tracking-widest px-2 py-1 bg-white/5 rounded">
-                              Vault: {song.category}
-                            </span>
-                            {song.tempo && (
-                              <span className="text-[10px] text-white/40 uppercase tracking-widest px-2 py-1 bg-white/5 rounded">
-                                {song.tempo}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
                   </div>
                 );
@@ -507,7 +569,20 @@ const SetlistPage: React.FC = () => {
         </div>
       )}
 
-      <SongDetailModal song={selectedSong} onClose={() => setSelectedSong(null)} />
+      {/* Enhanced Song Detail Modal with Navigation */}
+      {selectedSong && (
+        <SongDetailModal 
+          song={selectedSong} 
+          onClose={() => setSelectedSong(null)}
+          songs={currentCategorySongs}
+          currentIndex={currentSongIndex}
+          onNavigate={(index) => {
+            setCurrentSongIndex(index);
+            setSelectedSong(currentCategorySongs[index]);
+          }}
+          category={currentCategory}
+        />
+      )}
     </div>
   );
 };

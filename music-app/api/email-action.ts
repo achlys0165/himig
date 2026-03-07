@@ -1,6 +1,6 @@
 // api/email-action.ts
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { turso } from '../src/lib/turso';
+import { turso } from '../src/lib/turso.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Enable CORS
@@ -14,7 +14,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // Handle GET request (user clicks from email)
   if (req.method === 'GET') {
-    const { scheduleId, action, token } = req.query;
+    // Extract and validate query parameters
+    const scheduleId = Array.isArray(req.query.scheduleId) ? req.query.scheduleId[0] : req.query.scheduleId;
+    const action = Array.isArray(req.query.action) ? req.query.action[0] : req.query.action;
+    const token = Array.isArray(req.query.token) ? req.query.token[0] : req.query.token;
 
     if (!scheduleId || !action || !token) {
       return res.status(400).send(`
@@ -58,7 +61,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const schedule = rows[0] as any;
       
       // Simple token verification (schedule ID + musician ID + date)
-      const expectedToken = Buffer.from(`${scheduleId}:${schedule.musician_id}:${schedule.date}`).toString('base64');
+      const expectedToken = btoa(`${scheduleId}:${schedule.musician_id}:${schedule.date}`);
       if (token !== expectedToken) {
         throw new Error('Invalid token');
       }
@@ -206,7 +209,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // Verify token again
       const { rows } = await turso.execute({
         sql: 'SELECT s.*, u.name, u.email FROM schedules s JOIN users u ON s.musician_id = u.id WHERE s.id = ?',
-        args: [scheduleId]
+        args: [scheduleId as string]
       });
 
       if (rows.length === 0) {
@@ -214,7 +217,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       const schedule = rows[0] as any;
-      const expectedToken = Buffer.from(`${scheduleId}:${schedule.musician_id}:${schedule.date}`).toString('base64');
+      const expectedToken = btoa(`${scheduleId}:${schedule.musician_id}:${schedule.date}`);
       
       if (token !== expectedToken) {
         throw new Error('Invalid token');
@@ -224,7 +227,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const newStatus = action === 'accept' ? 'accepted' : 'rejected';
       await turso.execute({
         sql: 'UPDATE schedules SET status = ?, decline_reason = ? WHERE id = ?',
-        args: [newStatus, declineReason || null, scheduleId]
+        args: [newStatus, (declineReason as string) || null, scheduleId as string]
       });
 
       // Notify admins

@@ -60,38 +60,31 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   // Send email notification via API
-  const sendEmailNotification = async (to: string, subject: string, message: string) => {
+  const sendEmailNotification = async (to: string, subject: string, text: string, html?: string) => {
     try {
-      if (!to) return;
+      if (!to) {
+        console.log('No email address provided, skipping email');
+        return;
+      }
       
-      await fetch('/api/send-email', {
+      const response = await fetch('/api/send-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           to,
           subject,
-          text: message,
-          html: `
-            <div style="background:#000;color:#fff;padding:40px;font-family:Arial,sans-serif;max-width:600px;">
-              <div style="text-align:center;margin-bottom:30px;">
-                <div style="width:60px;height:60px;background:#fff;border-radius:16px;display:inline-flex;align-items:center;justify-content:center;">
-                  <span style="color:#000;font-size:32px;font-weight:900;font-style:italic;">H</span>
-                </div>
-                <h1 style="font-size:28px;font-weight:900;font-style:italic;margin:20px 0 0;">HIMIG</h1>
-                <p style="color:#666;font-size:12px;letter-spacing:3px;text-transform:uppercase;">TOP Music Ministry</p>
-              </div>
-              <div style="background:#0a0a0a;border:1px solid #333;border-radius:20px;padding:30px;">
-                <h2 style="font-size:18px;margin-bottom:20px;">${subject}</h2>
-                <p style="color:#ccc;line-height:1.6;">${message.replace(/\n/g, '<br>')}</p>
-                <div style="margin-top:30px;padding-top:20px;border-top:1px solid #333;">
-                  <p style="color:#666;font-size:12px;">This is an automated notification from the HIMIG Music Ministry system.</p>
-                  <a href="https://top-himig.vercel.app" style="display:inline-block;margin-top:15px;padding:12px 24px;background:#fff;color:#000;text-decoration:none;border-radius:8px;font-weight:bold;font-size:12px;text-transform:uppercase;letter-spacing:1px;">Open HIMIG</a>
-                </div>
-              </div>
-            </div>
-          `
+          text,
+          html: html || text
         })
       });
+
+      if (!response.ok) {
+        const error = await response.json();
+        console.error('Email API error:', error);
+        // Don't throw - email is non-critical
+      } else {
+        console.log(`Email sent successfully to ${to}`);
+      }
     } catch (error) {
       console.error('Email send failed:', error);
       // Don't throw - email is non-critical
@@ -295,10 +288,64 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         sendPushNotification('HIMIG - New Song', message);
         
         if (userData.email) {
+          const emailHtml = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <meta charset="utf-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>New Song - HIMIG Music Ministry</title>
+            </head>
+            <body style="margin: 0; padding: 0; background-color: #000000; font-family: Arial, sans-serif; -webkit-font-smoothing: antialiased;">
+              <table role="presentation" cellpadding="0" cellspacing="0" style="width: 100%; background-color: #000000;">
+                <tr>
+                  <td align="center" style="padding: 40px 20px;">
+                    <table role="presentation" cellpadding="0" cellspacing="0" style="width: 600px; background-color: #0a0a0a; border-radius: 24px; border: 1px solid #222; overflow: hidden;">
+                      <tr>
+                        <td style="background-color: #000; padding: 40px; text-align: center; border-bottom: 1px solid #222;">
+                          <div style="width: 60px; height: 60px; background-color: #fff; border-radius: 16px; display: inline-block; line-height: 60px; text-align: center; margin-bottom: 20px;">
+                            <span style="color: #000; font-size: 32px; font-weight: 900; font-style: italic;">H</span>
+                          </div>
+                          <h1 style="color: #fff; margin: 0; font-size: 28px; font-weight: 900; font-style: italic;">HIMIG</h1>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 40px;">
+                          <h2 style="color: #fff; margin: 0 0 20px; font-size: 20px; font-weight: bold;">New Song Added</h2>
+                          <p style="color: #999; margin: 0 0 30px; line-height: 1.6; font-size: 14px;">
+                            Hi <strong style="color: #fff;">${userData.name}</strong>,<br><br>
+                            A new song has been added to the HIMIG library:
+                          </p>
+                          <table role="presentation" cellpadding="0" cellspacing="0" style="width: 100%; background-color: #000; border-radius: 16px; border: 1px solid #333; margin-bottom: 30px;">
+                            <tr>
+                              <td style="padding: 30px;">
+                                <p style="color: #666; margin: 0 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 2px; font-weight: bold;">Title</p>
+                                <p style="color: #fff; margin: 0 0 20px; font-size: 24px; font-weight: bold; font-style: italic;">${songData.title}</p>
+                                <p style="color: #666; margin: 0 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 2px; font-weight: bold;">Category</p>
+                                <p style="color: #fff; margin: 0 0 20px; font-size: 18px; font-weight: bold;">${songData.category}</p>
+                                <p style="color: #666; margin: 0 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 2px; font-weight: bold;">Key</p>
+                                <p style="color: #fff; margin: 0; font-size: 18px; font-weight: bold;">${songData.original_key}</p>
+                              </td>
+                            </tr>
+                          </table>
+                          <a href="https://top-himig.vercel.app/search" style="display: inline-block; width: 100%; background-color: #fff; color: #000; text-decoration: none; padding: 16px 24px; border-radius: 12px; font-weight: bold; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; text-align: center; box-sizing: border-box;">
+                            View in Library
+                          </a>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </body>
+            </html>
+          `;
+
           await sendEmailNotification(
             userData.email,
             'New Song Added - HIMIG',
-            `Hi ${userData.name},\n\nA new song has been added to the HIMIG library:\n\nTitle: ${songData.title}\nCategory: ${songData.category}\nKey: ${songData.original_key}\n\nLog in to view the full details and lyrics.\n\nBest regards,\nTOP Music Ministry Team`
+            `Hi ${userData.name},\n\nA new song has been added to the HIMIG library:\n\nTitle: ${songData.title}\nCategory: ${songData.category}\nKey: ${songData.original_key}\n\nLog in to view the full details and lyrics.\n\nBest regards,\nTOP Music Ministry Team`,
+            emailHtml
           );
         }
       }
@@ -343,6 +390,14 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const musician = musicianRows[0] as any;
       const musicianName = musician?.name || 'Musician';
       const musicianEmail = musician?.email;
+
+      // Generate secure tokens for email actions
+      const acceptToken = btoa(`${scheduleId}:${assignment.musician_id}:${assignment.date}`);
+      const declineToken = acceptToken;// Same token works for both actions
+            
+      const acceptUrl = `https://top-himig.vercel.app/api/email-action?scheduleId=${scheduleId}&action=accept&token=${encodeURIComponent(acceptToken)}`;
+      const declineUrl = `https://top-himig.vercel.app/api/email-action?scheduleId=${scheduleId}&action=decline&token=${encodeURIComponent(declineToken)}`;
+      const appUrl = 'https://top-himig.vercel.app';
     
       const notifId = 'notif-' + Date.now();
       const message = `You have been assigned as ${assignment.role} on ${assignment.date}`;
@@ -362,10 +417,123 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       sendPushNotification('HIMIG - New Assignment', message);
       
       if (musicianEmail) {
+        const emailHtml = `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>New Assignment - HIMIG Music Ministry</title>
+            <style>
+              @media only screen and (max-width: 600px) {
+                .container { width: 100% !important; padding: 20px !important; }
+                .button { width: 100% !important; display: block !important; text-align: center !important; }
+              }
+            </style>
+          </head>
+          <body style="margin: 0; padding: 0; background-color: #000000; font-family: Arial, sans-serif; -webkit-font-smoothing: antialiased;">
+            <table role="presentation" cellpadding="0" cellspacing="0" style="width: 100%; background-color: #000000;">
+              <tr>
+                <td align="center" style="padding: 40px 20px;">
+                  <table role="presentation" cellpadding="0" cellspacing="0" class="container" style="width: 600px; background-color: #0a0a0a; border-radius: 24px; border: 1px solid #222; overflow: hidden;">
+                    <!-- Header -->
+                    <tr>
+                      <td style="background-color: #000; padding: 40px; text-align: center; border-bottom: 1px solid #222;">
+                        <div style="width: 60px; height: 60px; background-color: #fff; border-radius: 16px; display: inline-block; line-height: 60px; text-align: center; margin-bottom: 20px;">
+                          <span style="color: #000; font-size: 32px; font-weight: 900; font-style: italic;">H</span>
+                        </div>
+                        <h1 style="color: #fff; margin: 0; font-size: 28px; font-weight: 900; font-style: italic; letter-spacing: -1px;">HIMIG</h1>
+                        <p style="color: #666; margin: 10px 0 0; font-size: 12px; text-transform: uppercase; letter-spacing: 3px;">TOP Music Ministry</p>
+                      </td>
+                    </tr>
+                    
+                    <!-- Content -->
+                    <tr>
+                      <td style="padding: 40px;">
+                        <h2 style="color: #fff; margin: 0 0 20px; font-size: 20px; font-weight: bold;">New Assignment</h2>
+                        <p style="color: #999; margin: 0 0 30px; line-height: 1.6; font-size: 14px;">
+                          Hi <strong style="color: #fff;">${musicianName}</strong>,<br><br>
+                          You have been assigned as <strong style="color: #fff;">${assignment.role}</strong> for the upcoming service:
+                        </p>
+                        
+                        <!-- Assignment Card -->
+                        <table role="presentation" cellpadding="0" cellspacing="0" style="width: 100%; background-color: #000; border-radius: 16px; border: 1px solid #333; margin-bottom: 30px;">
+                          <tr>
+                            <td style="padding: 30px;">
+                              <p style="color: #666; margin: 0 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 2px; font-weight: bold;">Service Date</p>
+                              <p style="color: #fff; margin: 0 0 20px; font-size: 24px; font-weight: bold; font-style: italic;">
+                                ${new Date(assignment.date).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+                              </p>
+                              
+                              <p style="color: #666; margin: 0 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 2px; font-weight: bold;">Your Role</p>
+                              <p style="color: #fff; margin: 0; font-size: 18px; font-weight: bold;">${assignment.role}</p>
+                            </td>
+                          </tr>
+                        </table>
+                        
+                        <p style="color: #999; margin: 0 0 30px; line-height: 1.6; font-size: 14px;">
+                          Please respond to this assignment by clicking one of the buttons below, or log in to HIMIG to view more details.
+                        </p>
+                        
+                        <!-- Action Buttons -->
+                        <table role="presentation" cellpadding="0" cellspacing="0" style="width: 100%; margin-bottom: 20px;">
+                          <tr>
+                            <td style="padding-bottom: 12px;">
+                              <a href="${acceptUrl}" class="button" style="display: inline-block; width: 100%; background-color: #22c55e; color: #000; text-decoration: none; padding: 16px 24px; border-radius: 12px; font-weight: bold; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; text-align: center; box-sizing: border-box;">
+                                ✓ Accept Assignment
+                              </a>
+                            </td>
+                          </tr>
+                          <tr>
+                            <td>
+                              <a href="${declineUrl}" class="button" style="display: inline-block; width: 100%; background-color: transparent; color: #fff; text-decoration: none; padding: 16px 24px; border-radius: 12px; font-weight: bold; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; text-align: center; border: 1px solid #444; box-sizing: border-box;">
+                                ✕ Unable to Serve
+                              </a>
+                            </td>
+                          </tr>
+                        </table>
+                        
+                        <p style="color: #666; margin: 30px 0 0; font-size: 12px; text-align: center; line-height: 1.6;">
+                          Or log in at <a href="${appUrl}" style="color: #fff; text-decoration: underline;">top-himig.vercel.app</a>
+                        </p>
+                      </td>
+                    </tr>
+                    
+                    <!-- Footer -->
+                    <tr>
+                      <td style="background-color: #000; padding: 30px; text-align: center; border-top: 1px solid #222;">
+                        <p style="color: #444; margin: 0; font-size: 11px; line-height: 1.6;">
+                          This is an automated notification from the HIMIG Music Ministry system.<br>
+                          If you have questions, please contact your ministry coordinator.
+                        </p>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </body>
+          </html>
+        `;
+
+        const emailText = `
+Hi ${musicianName},
+
+You have been assigned as ${assignment.role} for the service on ${assignment.date}.
+
+ACCEPT: ${acceptUrl}
+DECLINE: ${declineUrl}
+
+Or log in to HIMIG: ${appUrl}
+
+TOP Music Ministry Team
+        `;
+
         await sendEmailNotification(
           musicianEmail,
           'New Assignment - HIMIG Music Ministry',
-          `Hi ${musicianName},\n\nYou have been assigned as ${assignment.role} for the service on ${assignment.date}.\n\nPlease log in to HIMIG to accept or decline this assignment.\n\nBest regards,\nTOP Music Ministry Team`
+          emailText,
+          emailHtml
         );
       }
     
@@ -462,10 +630,52 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
 
         if (adminData.email) {
+          const emailHtml = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <meta charset="utf-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>Assignment Update - HIMIG</title>
+            </head>
+            <body style="margin: 0; padding: 0; background-color: #000000; font-family: Arial, sans-serif;">
+              <table role="presentation" cellpadding="0" cellspacing="0" style="width: 100%; background-color: #000000;">
+                <tr>
+                  <td align="center" style="padding: 40px 20px;">
+                    <table role="presentation" cellpadding="0" cellspacing="0" style="width: 600px; background-color: #0a0a0a; border-radius: 24px; border: 1px solid #222;">
+                      <tr>
+                        <td style="padding: 40px; text-align: center;">
+                          <h1 style="color: #fff; margin: 0; font-size: 28px; font-weight: 900; font-style: italic;">HIMIG</h1>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 40px;">
+                          <h2 style="color: #fff; margin: 0 0 20px; font-size: 20px;">Assignment Response</h2>
+                          <p style="color: #999; margin: 0 0 30px; line-height: 1.6; font-size: 14px;">
+                            <strong style="color: #fff;">${schedule.musician_name}</strong> has 
+                            <strong style="color: ${status === 'accepted' ? '#22c55e' : '#ef4444'};">${status}</strong> 
+                            the assignment for <strong style="color: #fff;">${schedule.role}</strong> on 
+                            <strong style="color: #fff;">${schedule.date}</strong>.
+                            ${declineReason ? `<br><br>Reason: <em>${declineReason}</em>` : ''}
+                          </p>
+                          <a href="https://top-himig.vercel.app/admin-schedule" style="display: inline-block; background-color: #fff; color: #000; text-decoration: none; padding: 14px 28px; border-radius: 8px; font-weight: bold; font-size: 12px; text-transform: uppercase;">
+                            View Schedule
+                          </a>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </body>
+            </html>
+          `;
+
           await sendEmailNotification(
             adminData.email,
             `Assignment ${status} - HIMIG`,
-            `Hi ${adminData.name},\n\n${message}.\n\n${status === ScheduleStatus.REJECTED && declineReason ? `Reason provided: ${declineReason}\n\n` : ''}Please check the schedule for updates.\n\nBest regards,\nHIMIG System`
+            `Hi ${adminData.name},\n\n${message}.\n\n${status === ScheduleStatus.REJECTED && declineReason ? `Reason provided: ${declineReason}\n\n` : ''}Please check the schedule for updates.\n\nBest regards,\nHIMIG System`,
+            emailHtml
           );
         }
       }

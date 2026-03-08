@@ -1,6 +1,40 @@
 // api/email-action.ts
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { turso } from '../src/lib/turso.js';
+
+// Simple base64 encode/decode that works in Node.js
+const encodeToken = (data: string): string => Buffer.from(data).toString('base64');
+const decodeToken = (data: string): string => Buffer.from(data, 'base64').toString('utf-8');
+
+// Database client - inline to avoid import issues
+const TURSO_DATABASE_URL = process.env.TURSO_DATABASE_URL;
+const TURSO_AUTH_TOKEN = process.env.TURSO_AUTH_TOKEN;
+
+async function tursoExecute(sql: string, args: any[] = []) {
+  if (!TURSO_DATABASE_URL || !TURSO_AUTH_TOKEN) {
+    throw new Error('Database not configured');
+  }
+  
+  const response = await fetch(TURSO_DATABASE_URL.replace('libsql://', 'https://') + '/v2/pipeline', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${TURSO_AUTH_TOKEN}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      requests: [
+        { type: 'execute', stmt: { sql, args } },
+        { type: 'close' }
+      ]
+    })
+  });
+  
+  if (!response.ok) {
+    throw new Error(`Database error: ${response.status}`);
+  }
+  
+  const data = await response.json();
+  return { rows: data.results[0]?.result?.rows || [] };
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Enable CORS
@@ -12,58 +46,60 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).end();
   }
 
-  // Handle GET request (user clicks from email)
+  // Error page template
+  const errorPage = (title: string, message: string) => `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>HIMIG - ${title}</title>
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <style>
+        body { font-family: Arial, sans-serif; background: #000; color: #fff; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+        .container { text-align: center; padding: 40px; max-width: 400px; }
+        .error { color: #ff4444; font-size: 48px; margin-bottom: 20px; }
+        h1 { font-size: 24px; margin-bottom: 10px; }
+        p { color: #666; line-height: 1.6; }
+        .btn { display: inline-block; margin-top: 20px; padding: 12px 24px; background: #fff; color: #000; text-decoration: none; border-radius: 8px; font-weight: bold; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="error">⚠</div>
+        <h1>${title}</h1>
+        <p>${message}</p>
+        <a href="https://top-himig.vercel.app" class="btn">Go to HIMIG</a>
+      </div>
+    </body>
+    </html>
+  `;
+
+  // Handle GET request
   if (req.method === 'GET') {
-    // Extract and validate query parameters
-    const scheduleId = Array.isArray(req.query.scheduleId) ? req.query.scheduleId[0] : req.query.scheduleId;
-    const action = Array.isArray(req.query.action) ? req.query.action[0] : req.query.action;
-    const token = Array.isArray(req.query.token) ? req.query.token[0] : req.query.token;
-
-    if (!scheduleId || !action || !token) {
-      return res.status(400).send(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>HIMIG - Invalid Request</title>
-          <meta name="viewport" content="width=device-width, initial-scale=1">
-          <style>
-            body { font-family: Arial, sans-serif; background: #000; color: #fff; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
-            .container { text-align: center; padding: 40px; max-width: 400px; }
-            .error { color: #ff4444; font-size: 48px; margin-bottom: 20px; }
-            h1 { font-size: 24px; margin-bottom: 10px; }
-            p { color: #666; line-height: 1.6; }
-            .btn { display: inline-block; margin-top: 20px; padding: 12px 24px; background: #fff; color: #000; text-decoration: none; border-radius: 8px; font-weight: bold; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="error">✕</div>
-            <h1>Invalid Link</h1>
-            <p>This link appears to be invalid or has expired. Please log in to HIMIG to manage your assignments.</p>
-            <a href="https://top-himig.vercel.app" class="btn">Go to HIMIG</a>
-          </div>
-        </body>
-        </html>
-      `);
-    }
-
     try {
-      // Verify the token matches the schedule
-      const { rows } = await turso.execute({
-        sql: 'SELECT s.*, u.name, u.email FROM schedules s JOIN users u ON s.musician_id = u.id WHERE s.id = ?',
-        args: [scheduleId]
-      });
+      const scheduleId = Array.isArray(req.query.scheduleId) ? req.query.scheduleId[0] : req.query.scheduleId;
+      const action = Array.isArray(req.query.action) ? req.query.action[0] : req.query.action;
+      const token = Array.isArray(req.query.token) ? req.query.token[0] : req.query.token;
+
+      if (!scheduleId || !action || !token) {
+        return res.status(400).send(errorPage('Invalid Link', 'This link is missing required parameters.'));
+      }
+
+      // Get schedule from database
+      const { rows } = await tursoExecute(
+        'SELECT s.*, u.name, u.email FROM schedules s JOIN users u ON s.musician_id = u.id WHERE s.id = ?',
+        [scheduleId]
+      );
 
       if (rows.length === 0) {
-        throw new Error('Assignment not found');
+        return res.status(404).send(errorPage('Not Found', 'This assignment no longer exists.'));
       }
 
       const schedule = rows[0] as any;
       
-      // Simple token verification (schedule ID + musician ID + date)
-      const expectedToken = btoa(`${scheduleId}:${schedule.musician_id}:${schedule.date}`);
+      // Verify token
+      const expectedToken = encodeToken(`${scheduleId}:${schedule.musician_id}:${schedule.date}`);
       if (token !== expectedToken) {
-        throw new Error('Invalid token');
+        return res.status(403).send(errorPage('Invalid Token', 'This link has expired or is invalid.'));
       }
 
       // Check if already responded
@@ -78,7 +114,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             <style>
               body { font-family: Arial, sans-serif; background: #000; color: #fff; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
               .container { text-align: center; padding: 40px; max-width: 400px; }
-              .icon { font-size: 48px; margin-bottom: 20px; }
+              .icon { color: #22c55e; font-size: 48px; margin-bottom: 20px; }
               h1 { font-size: 24px; margin-bottom: 10px; }
               p { color: #666; line-height: 1.6; }
               .details { background: #111; padding: 20px; border-radius: 12px; margin: 20px 0; text-align: left; }
@@ -98,7 +134,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 <div class="label">Date</div>
                 <div class="value">${schedule.date}</div>
                 <div class="label">Status</div>
-                <div class="value" style="color: ${schedule.status === 'accepted' ? '#4ade80' : '#f87171'}">${schedule.status.toUpperCase()}</div>
+                <div class="value" style="color: ${schedule.status === 'accepted' ? '#22c55e' : '#ef4444'}">${schedule.status.toUpperCase()}</div>
               </div>
               <a href="https://top-himig.vercel.app/schedule" class="btn">View My Schedule</a>
             </div>
@@ -109,7 +145,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       // Show confirmation page
       const isAccept = action === 'accept';
-      const actionColor = isAccept ? '#4ade80' : '#f87171';
+      const actionColor = isAccept ? '#22c55e' : '#ef4444';
       const actionIcon = isAccept ? '✓' : '✕';
       const actionText = isAccept ? 'Accept' : 'Decline';
 
@@ -120,8 +156,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           <title>HIMIG - ${actionText} Assignment</title>
           <meta name="viewport" content="width=device-width, initial-scale=1">
           <style>
-            body { font-family: Arial, sans-serif; background: #000; color: #fff; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
-            .container { text-align: center; padding: 40px; max-width: 400px; }
+            body { font-family: Arial, sans-serif; background: #000; color: #fff; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+            .container { text-align: center; max-width: 400px; width: 100%; }
             .icon { color: ${actionColor}; font-size: 48px; margin-bottom: 20px; }
             h1 { font-size: 24px; margin-bottom: 10px; }
             p { color: #666; line-height: 1.6; }
@@ -129,18 +165,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             .label { color: #666; font-size: 12px; text-transform: uppercase; margin-bottom: 4px; }
             .value { color: #fff; font-weight: bold; margin-bottom: 12px; }
             .btn-group { display: flex; gap: 12px; margin-top: 20px; }
-            .btn { flex: 1; padding: 14px 24px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; text-decoration: none; display: inline-block; }
+            .btn { flex: 1; padding: 14px 24px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; text-decoration: none; display: inline-block; text-align: center; }
             .btn-primary { background: ${actionColor}; color: #000; }
             .btn-secondary { background: transparent; color: #fff; border: 1px solid #333; }
             .reason-box { margin-top: 15px; }
-            textarea { width: 100%; background: #000; border: 1px solid #333; color: #fff; padding: 12px; border-radius: 8px; font-family: inherit; resize: vertical; }
+            textarea { width: 100%; background: #000; border: 1px solid #333; color: #fff; padding: 12px; border-radius: 8px; font-family: inherit; resize: vertical; box-sizing: border-box; }
           </style>
         </head>
         <body>
           <div class="container">
             <div class="icon">${actionIcon}</div>
             <h1>${actionText} Assignment?</h1>
-            <p>Please confirm your response to this service assignment:</p>
+            <p>Please confirm your response:</p>
             <div class="details">
               <div class="label">Musician</div>
               <div class="value">${schedule.name}</div>
@@ -173,89 +209,67 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     } catch (error: any) {
       console.error('Email action GET error:', error);
-      return res.status(400).send(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>HIMIG - Error</title>
-          <meta name="viewport" content="width=device-width, initial-scale=1">
-          <style>
-            body { font-family: Arial, sans-serif; background: #000; color: #fff; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
-            .container { text-align: center; padding: 40px; max-width: 400px; }
-            .error { color: #ff4444; font-size: 48px; margin-bottom: 20px; }
-            h1 { font-size: 24px; margin-bottom: 10px; }
-            p { color: #666; line-height: 1.6; }
-            .btn { display: inline-block; margin-top: 20px; padding: 12px 24px; background: #fff; color: #000; text-decoration: none; border-radius: 8px; font-weight: bold; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="error">⚠</div>
-            <h1>Link Expired</h1>
-            <p>This link has expired or is no longer valid. Please log in to HIMIG to manage your assignments.</p>
-            <a href="https://top-himig.vercel.app" class="btn">Go to HIMIG</a>
-          </div>
-        </body>
-        </html>
-      `);
+      return res.status(500).send(errorPage('Server Error', 'Something went wrong. Please try again or log in to HIMIG.'));
     }
   }
 
-  // Handle POST request (form submission)
+  // Handle POST request
   if (req.method === 'POST') {
-    const { scheduleId, action, token, declineReason } = req.body;
-
     try {
-      // Verify token again
-      const { rows } = await turso.execute({
-        sql: 'SELECT s.*, u.name, u.email FROM schedules s JOIN users u ON s.musician_id = u.id WHERE s.id = ?',
-        args: [scheduleId as string]
-      });
+      const { scheduleId, action, token, declineReason } = req.body;
+
+      if (!scheduleId || !action || !token) {
+        return res.status(400).send(errorPage('Invalid Request', 'Missing required fields.'));
+      }
+
+      // Get schedule
+      const { rows } = await tursoExecute(
+        'SELECT s.*, u.name, u.email FROM schedules s JOIN users u ON s.musician_id = u.id WHERE s.id = ?',
+        [scheduleId]
+      );
 
       if (rows.length === 0) {
-        throw new Error('Assignment not found');
+        return res.status(404).send(errorPage('Not Found', 'Assignment not found.'));
       }
 
       const schedule = rows[0] as any;
-      const expectedToken = btoa(`${scheduleId}:${schedule.musician_id}:${schedule.date}`);
+      const expectedToken = encodeToken(`${scheduleId}:${schedule.musician_id}:${schedule.date}`);
       
       if (token !== expectedToken) {
-        throw new Error('Invalid token');
+        return res.status(403).send(errorPage('Invalid Token', 'Token verification failed.'));
       }
 
-      // Update schedule status
+      // Update status
       const newStatus = action === 'accept' ? 'accepted' : 'rejected';
-      await turso.execute({
-        sql: 'UPDATE schedules SET status = ?, decline_reason = ? WHERE id = ?',
-        args: [newStatus, (declineReason as string) || null, scheduleId as string]
-      });
+      await tursoExecute(
+        'UPDATE schedules SET status = ?, decline_reason = ? WHERE id = ?',
+        [newStatus, declineReason || null, scheduleId]
+      );
 
       // Notify admins
-      const { rows: admins } = await turso.execute({
-        sql: "SELECT id, email, name FROM users WHERE role IN ('admin', 'super_admin')"
-      });
+      const { rows: admins } = await tursoExecute(
+        "SELECT id FROM users WHERE role IN ('admin', 'super_admin')"
+      );
 
-      const actionText = action === 'accept' ? 'accepted' : 'declined';
-      const adminMessage = `${schedule.name} has ${actionText} the assignment for ${schedule.role} on ${schedule.date}${declineReason ? `. Reason: ${declineReason}` : ''}`;
+      const adminMessage = `${schedule.name} has ${newStatus} the assignment for ${schedule.role} on ${schedule.date}${declineReason ? `. Reason: ${declineReason}` : ''}`;
 
-      // Send notifications to admins (async, don't wait)
       for (const admin of admins) {
         const adminData = admin as any;
-        await turso.execute({
-          sql: `INSERT INTO notifications (id, user_id, message, type, read, created_at) 
-                VALUES (?, ?, ?, ?, ?, datetime('now'))`,
-          args: [
+        await tursoExecute(
+          `INSERT INTO notifications (id, user_id, message, type, read, created_at) 
+           VALUES (?, ?, ?, ?, ?, datetime('now'))`,
+          [
             'notif-' + Date.now() + '-' + adminData.id,
             adminData.id,
             adminMessage,
             'info',
             false
           ]
-        });
+        );
       }
 
-      // Return success page
-      const successColor = action === 'accept' ? '#4ade80' : '#f87171';
+      // Success page
+      const successColor = action === 'accept' ? '#22c55e' : '#ef4444';
       return res.send(`
         <!DOCTYPE html>
         <html>
@@ -297,31 +311,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     } catch (error: any) {
       console.error('Email action POST error:', error);
-      return res.status(400).send(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>HIMIG - Error</title>
-          <meta name="viewport" content="width=device-width, initial-scale=1">
-          <style>
-            body { font-family: Arial, sans-serif; background: #000; color: #fff; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
-            .container { text-align: center; padding: 40px; max-width: 400px; }
-            .error { color: #ff4444; font-size: 48px; margin-bottom: 20px; }
-            h1 { font-size: 24px; margin-bottom: 10px; }
-            p { color: #666; line-height: 1.6; }
-            .btn { display: inline-block; margin-top: 20px; padding: 12px 24px; background: #fff; color: #000; text-decoration: none; border-radius: 8px; font-weight: bold; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="error">⚠</div>
-            <h1>Unable to Process</h1>
-            <p>We couldn't process your response. The assignment may have been updated or removed.</p>
-            <a href="https://top-himig.vercel.app" class="btn">Go to HIMIG</a>
-          </div>
-        </body>
-        </html>
-      `);
+      return res.status(500).send(errorPage('Server Error', 'Failed to process your response. Please try again.'));
     }
   }
 

@@ -423,88 +423,89 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           <head>
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <!-- Add plaintext version -->
+            <meta name="format-detection" content="telephone=no, date=no, address=no">
             <title>New Assignment - HIMIG Music Ministry</title>
-            <style>
-              @media only screen and (max-width: 600px) {
-                .container { width: 100% !important; padding: 20px !important; }
-                .button { width: 100% !important; display: block !important; text-align: center !important; }
-              }
-            </style>
           </head>
-          <body style="margin: 0; padding: 0; background-color: #000000; font-family: Arial, sans-serif; -webkit-font-smoothing: antialiased;">
-            <table role="presentation" cellpadding="0" cellspacing="0" style="width: 100%; background-color: #000000;">
+          <body style="margin: 0; padding: 0; background-color: #f4f4f4; font-family: Arial, sans-serif;">
+            <!-- Preheader text (hidden) -->
+            <div style="display: none; max-height: 0; overflow: hidden;">
+              You have been assigned as ${assignment.role} for ${assignment.date}. Click to accept or decline.
+            </div>
+            
+            <table role="presentation" cellpadding="0" cellspacing="0" style="width: 100%; background-color: #f4f4f4;">
               <tr>
-                <td align="center" style="padding: 40px 20px;">
-                  <table role="presentation" cellpadding="0" cellspacing="0" class="container" style="width: 600px; background-color: #0a0a0a; border-radius: 24px; border: 1px solid #222; overflow: hidden;">
-                    <!-- Header -->
+                <td align="center" style="padding: 20px;">
+                  <table role="presentation" cellpadding="0" cellspacing="0" style="width: 600px; background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                    <!-- Header with text (not just image) -->
                     <tr>
-                      <td style="background-color: #000; padding: 40px; text-align: center; border-bottom: 1px solid #222;">
-                        <div style="width: 60px; height: 60px; background-color: #fff; border-radius: 16px; display: inline-block; line-height: 60px; text-align: center; margin-bottom: 20px;">
-                          <span style="color: #000; font-size: 32px; font-weight: 900; font-style: italic;">H</span>
-                        </div>
-                        <h1 style="color: #fff; margin: 0; font-size: 28px; font-weight: 900; font-style: italic; letter-spacing: -1px;">HIMIG</h1>
-                        <p style="color: #666; margin: 10px 0 0; font-size: 12px; text-transform: uppercase; letter-spacing: 3px;">TOP Music Ministry</p>
+                      <td style="background-color: #000000; padding: 30px; text-align: center;">
+                        <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: bold; font-style: italic;">HIMIG</h1>
+                        <p style="color: #cccccc; margin: 5px 0 0; font-size: 12px; text-transform: uppercase; letter-spacing: 2px;">TOP Music Ministry</p>
                       </td>
                     </tr>
                     
                     <!-- Content -->
                     <tr>
-                      <td style="padding: 40px;">
-                        <h2 style="color: #fff; margin: 0 0 20px; font-size: 20px; font-weight: bold;">New Assignment</h2>
-                        <p style="color: #999; margin: 0 0 30px; line-height: 1.6; font-size: 14px;">
-                          Hi <strong style="color: #fff;">${musicianName}</strong>,<br><br>
-                          You have been assigned as <strong style="color: #fff;">${assignment.role}</strong> for the upcoming service:
+                      <td style="padding: 40px 30px;">
+                        <p style="color: #333333; margin: 0 0 20px; line-height: 1.6; font-size: 16px;">
+                          Hi <strong>${musicianName}</strong>,
+                        </p>
+                        <p style="color: #333333; margin: 0 0 30px; line-height: 1.6; font-size: 16px;">
+                          You have been assigned as <strong>${assignment.role}</strong> for the upcoming service:
                         </p>
                         
-                        <!-- Assignment Card -->
-                        <table role="presentation" cellpadding="0" cellspacing="0" style="width: 100%; background-color: #000; border-radius: 16px; border: 1px solid #333; margin-bottom: 30px;">
+                        <!-- Assignment Box -->
+                        <table role="presentation" cellpadding="0" cellspacing="0" style="width: 100%; background-color: #f9f9f9; border-left: 4px solid #000000; margin-bottom: 30px;">
                           <tr>
-                            <td style="padding: 30px;">
-                              <p style="color: #666; margin: 0 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 2px; font-weight: bold;">Service Date</p>
-                              <p style="color: #fff; margin: 0 0 20px; font-size: 24px; font-weight: bold; font-style: italic;">
+                            <td style="padding: 20px;">
+                              <p style="color: #666666; margin: 0 0 5px; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; font-weight: bold;">Service Date</p>
+                              <p style="color: #000000; margin: 0 0 15px; font-size: 20px; font-weight: bold;">
                                 ${new Date(assignment.date).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
                               </p>
-                              
-                              <p style="color: #666; margin: 0 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 2px; font-weight: bold;">Your Role</p>
-                              <p style="color: #fff; margin: 0; font-size: 18px; font-weight: bold;">${assignment.role}</p>
+                              <p style="color: #666666; margin: 0 0 5px; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; font-weight: bold;">Your Role</p>
+                              <p style="color: #000000; margin: 0; font-size: 18px; font-weight: bold;">${assignment.role}</p>
                             </td>
                           </tr>
                         </table>
                         
-                        <p style="color: #999; margin: 0 0 30px; line-height: 1.6; font-size: 14px;">
-                          Please respond to this assignment by clicking one of the buttons below, or log in to HIMIG to view more details.
+                        <p style="color: #666666; margin: 0 0 25px; line-height: 1.6; font-size: 14px;">
+                          Please respond by clicking one of the buttons below:
                         </p>
                         
-                        <!-- Action Buttons -->
-                        <table role="presentation" cellpadding="0" cellspacing="0" style="width: 100%; margin-bottom: 20px;">
+                        <!-- Buttons -->
+                        <table role="presentation" cellpadding="0" cellspacing="0" style="width: 100%;">
                           <tr>
-                            <td style="padding-bottom: 12px;">
-                              <a href="${acceptUrl}" class="button" style="display: inline-block; width: 100%; background-color: #22c55e; color: #000; text-decoration: none; padding: 16px 24px; border-radius: 12px; font-weight: bold; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; text-align: center; box-sizing: border-box;">
+                            <td style="padding-bottom: 10px;">
+                              <a href="${acceptUrl}" style="display: block; width: 100%; background-color: #22c55e; color: #ffffff; text-decoration: none; padding: 15px; border-radius: 6px; font-weight: bold; font-size: 14px; text-align: center; text-transform: uppercase; letter-spacing: 1px;">
                                 ✓ Accept Assignment
                               </a>
                             </td>
                           </tr>
                           <tr>
                             <td>
-                              <a href="${declineUrl}" class="button" style="display: inline-block; width: 100%; background-color: transparent; color: #fff; text-decoration: none; padding: 16px 24px; border-radius: 12px; font-weight: bold; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; text-align: center; border: 1px solid #444; box-sizing: border-box;">
+                              <a href="${declineUrl}" style="display: block; width: 100%; background-color: #ef4444; color: #ffffff; text-decoration: none; padding: 15px; border-radius: 6px; font-weight: bold; font-size: 14px; text-align: center; text-transform: uppercase; letter-spacing: 1px;">
                                 ✕ Unable to Serve
                               </a>
                             </td>
                           </tr>
                         </table>
                         
-                        <p style="color: #666; margin: 30px 0 0; font-size: 12px; text-align: center; line-height: 1.6;">
-                          Or log in at <a href="${appUrl}" style="color: #fff; text-decoration: underline;">top-himig.vercel.app</a>
+                        <p style="color: #999999; margin: 25px 0 0; font-size: 12px; text-align: center;">
+                          Or log in at <a href="https://top-himig.vercel.app" style="color: #000000; text-decoration: underline;">top-himig.vercel.app</a>
                         </p>
                       </td>
                     </tr>
                     
                     <!-- Footer -->
                     <tr>
-                      <td style="background-color: #000; padding: 30px; text-align: center; border-top: 1px solid #222;">
-                        <p style="color: #444; margin: 0; font-size: 11px; line-height: 1.6;">
-                          This is an automated notification from the HIMIG Music Ministry system.<br>
-                          If you have questions, please contact your ministry coordinator.
+                      <td style="background-color: #f4f4f4; padding: 20px; text-align: center; border-top: 1px solid #e0e0e0;">
+                        <p style="color: #999999; margin: 0; font-size: 12px; line-height: 1.6;">
+                          This is an automated notification from HIMIG Music Ministry.<br>
+                          If you have questions, contact your ministry coordinator.
+                        </p>
+                        <p style="color: #bbbbbb; margin: 10px 0 0; font-size: 11px;">
+                          Sent to ${musicianEmail}
                         </p>
                       </td>
                     </tr>

@@ -15,7 +15,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { to, subject, text, html, actionUrl } = req.body;
+  const { to, subject, text, html } = req.body;
 
   if (!to || !subject || !text) {
     return res.status(400).json({ error: 'Missing required fields: to, subject, text' });

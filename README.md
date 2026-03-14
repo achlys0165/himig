@@ -1,4 +1,4 @@
-# 🎵 Interval
+# 🎵 HIMIG
 
 > **A minimalist worship management system built for modern music ministries.**
 

@@ -1,52 +1,73 @@
 // api/email-action.ts
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-// Simple base64 encode/decode that works in Node.js
 const encodeToken = (data: string): string => Buffer.from(data).toString('base64');
-const decodeToken = (data: string): string => Buffer.from(data, 'base64').toString('utf-8');
 
-// Database client - inline to avoid import issues
 const TURSO_DATABASE_URL = process.env.TURSO_DATABASE_URL;
 const TURSO_AUTH_TOKEN = process.env.TURSO_AUTH_TOKEN;
 
+// ✅ THE FIX: Turso HTTP API returns rows as arrays of {type, value} objects
+// and columns separately. This helper zips them into plain objects.
 async function tursoExecute(sql: string, args: any[] = []) {
   if (!TURSO_DATABASE_URL || !TURSO_AUTH_TOKEN) {
     throw new Error('Database not configured');
   }
-  
-  const response = await fetch(TURSO_DATABASE_URL.replace('libsql://', 'https://') + '/v2/pipeline', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${TURSO_AUTH_TOKEN}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      requests: [
-        { type: 'execute', stmt: { sql, args } },
-        { type: 'close' }
-      ]
-    })
+
+  // Turso args must be wrapped as {type, value}
+  const wrappedArgs = args.map((arg) => {
+    if (arg === null || arg === undefined) return { type: 'null', value: null };
+    if (typeof arg === 'number') return { type: 'integer', value: String(arg) };
+    return { type: 'text', value: String(arg) };
   });
-  
+
+  const response = await fetch(
+    TURSO_DATABASE_URL.replace('libsql://', 'https://') + '/v2/pipeline',
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${TURSO_AUTH_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        requests: [
+          { type: 'execute', stmt: { sql, args: wrappedArgs } },
+          { type: 'close' },
+        ],
+      }),
+    }
+  );
+
   if (!response.ok) {
-    throw new Error(`Database error: ${response.status}`);
+    const text = await response.text();
+    throw new Error(`Database error ${response.status}: ${text}`);
   }
-  
+
   const data = await response.json();
-  return { rows: data.results[0]?.result?.rows || [] };
+  const result = data.results[0]?.result;
+
+  if (!result) return { rows: [] };
+
+  const cols: string[] = result.cols.map((c: any) => c.name);
+
+  // Convert each row-array into a plain object using column names
+  const rows = result.rows.map((row: any[]) => {
+    const obj: Record<string, any> = {};
+    row.forEach((cell: any, i: number) => {
+      obj[cols[i]] = cell?.value ?? null;
+    });
+    return obj;
+  });
+
+  return { rows };
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Enable CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
+  if (req.method === 'OPTIONS') return res.status(200).end();
 
-  // Error page template
   const errorPage = (title: string, message: string) => `
     <!DOCTYPE html>
     <html>
@@ -73,18 +94,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     </html>
   `;
 
-  // Handle GET request
+  // ── GET: Show confirmation page ──────────────────────────────────────────
   if (req.method === 'GET') {
     try {
       const scheduleId = Array.isArray(req.query.scheduleId) ? req.query.scheduleId[0] : req.query.scheduleId;
-      const action = Array.isArray(req.query.action) ? req.query.action[0] : req.query.action;
-      const token = Array.isArray(req.query.token) ? req.query.token[0] : req.query.token;
+      const action     = Array.isArray(req.query.action)     ? req.query.action[0]     : req.query.action;
+      const token      = Array.isArray(req.query.token)      ? req.query.token[0]      : req.query.token;
 
       if (!scheduleId || !action || !token) {
         return res.status(400).send(errorPage('Invalid Link', 'This link is missing required parameters.'));
       }
 
-      // Get schedule from database
       const { rows } = await tursoExecute(
         'SELECT s.*, u.name, u.email FROM schedules s JOIN users u ON s.musician_id = u.id WHERE s.id = ?',
         [scheduleId]
@@ -94,17 +114,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(404).send(errorPage('Not Found', 'This assignment no longer exists.'));
       }
 
-      const schedule = rows[0] as any;
-      
+      const schedule = rows[0];
+
       // Verify token
       const expectedToken = encodeToken(`${scheduleId}:${schedule.musician_id}:${schedule.date}`);
-      if (token !== expectedToken) {
+      if (decodeURIComponent(token) !== expectedToken && token !== expectedToken) {
         return res.status(403).send(errorPage('Invalid Token', 'This link has expired or is invalid.'));
       }
 
-      // Check if already responded
+      // Already responded
       if (schedule.status !== 'pending') {
-        const status = schedule.status === 'accepted' ? 'accepted' : 'declined';
         return res.send(`
           <!DOCTYPE html>
           <html>
@@ -127,14 +146,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             <div class="container">
               <div class="icon">✓</div>
               <h1>Already Responded</h1>
-              <p>You have already ${status} this assignment.</p>
+              <p>You have already ${schedule.status} this assignment.</p>
               <div class="details">
-                <div class="label">Role</div>
-                <div class="value">${schedule.role}</div>
-                <div class="label">Date</div>
-                <div class="value">${schedule.date}</div>
+                <div class="label">Role</div><div class="value">${schedule.role}</div>
+                <div class="label">Date</div><div class="value">${schedule.date}</div>
                 <div class="label">Status</div>
-                <div class="value" style="color: ${schedule.status === 'accepted' ? '#22c55e' : '#ef4444'}">${schedule.status.toUpperCase()}</div>
+                <div class="value" style="color: ${schedule.status === 'accepted' ? '#22c55e' : '#ef4444'}">${schedule.status?.toUpperCase()}</div>
               </div>
               <a href="https://top-himig.vercel.app/schedule" class="btn">View My Schedule</a>
             </div>
@@ -143,11 +160,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         `);
       }
 
-      // Show confirmation page
-      const isAccept = action === 'accept';
+      // Show confirm page
+      const isAccept    = action === 'accept';
       const actionColor = isAccept ? '#22c55e' : '#ef4444';
-      const actionIcon = isAccept ? '✓' : '✕';
-      const actionText = isAccept ? 'Accept' : 'Decline';
+      const actionIcon  = isAccept ? '✓' : '✕';
+      const actionText  = isAccept ? 'Accept' : 'Decline';
 
       return res.send(`
         <!DOCTYPE html>
@@ -165,10 +182,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             .label { color: #666; font-size: 12px; text-transform: uppercase; margin-bottom: 4px; }
             .value { color: #fff; font-weight: bold; margin-bottom: 12px; }
             .btn-group { display: flex; gap: 12px; margin-top: 20px; }
-            .btn { flex: 1; padding: 14px 24px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; text-decoration: none; display: inline-block; text-align: center; }
-            .btn-primary { background: ${actionColor}; color: #000; }
+            .btn { flex: 1; padding: 14px 24px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; text-decoration: none; display: inline-block; text-align: center; font-size: 14px; }
+            .btn-primary { background: ${actionColor}; color: #fff; }
             .btn-secondary { background: transparent; color: #fff; border: 1px solid #333; }
-            .reason-box { margin-top: 15px; }
+            .reason-box { margin-top: 15px; text-align: left; }
+            .reason-box .label { margin-bottom: 8px; display: block; }
             textarea { width: 100%; background: #000; border: 1px solid #333; color: #fff; padding: 12px; border-radius: 8px; font-family: inherit; resize: vertical; box-sizing: border-box; }
           </style>
         </head>
@@ -178,25 +196,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             <h1>${actionText} Assignment?</h1>
             <p>Please confirm your response:</p>
             <div class="details">
-              <div class="label">Musician</div>
-              <div class="value">${schedule.name}</div>
-              <div class="label">Role</div>
-              <div class="value">${schedule.role}</div>
+              <div class="label">Musician</div><div class="value">${schedule.name}</div>
+              <div class="label">Role</div><div class="value">${schedule.role}</div>
               <div class="label">Date</div>
-              <div class="value">${new Date(schedule.date).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</div>
+              <div class="value">${new Date(schedule.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</div>
             </div>
             <form method="POST" action="/api/email-action">
               <input type="hidden" name="scheduleId" value="${scheduleId}">
               <input type="hidden" name="action" value="${action}">
               <input type="hidden" name="token" value="${token}">
-              
               ${!isAccept ? `
               <div class="reason-box">
-                <div class="label">Reason for declining (optional)</div>
+                <span class="label" style="color: #666; font-size: 12px; text-transform: uppercase;">Reason for declining (optional)</span>
                 <textarea name="declineReason" rows="3" placeholder="e.g., I have a family event, I'm out of town..."></textarea>
-              </div>
-              ` : ''}
-              
+              </div>` : ''}
               <div class="btn-group">
                 <a href="https://top-himig.vercel.app" class="btn btn-secondary">Cancel</a>
                 <button type="submit" class="btn btn-primary">Confirm ${actionText}</button>
@@ -213,7 +226,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
-  // Handle POST request
+  // ── POST: Process the confirmation ──────────────────────────────────────
   if (req.method === 'POST') {
     try {
       const { scheduleId, action, token, declineReason } = req.body;
@@ -222,7 +235,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(400).send(errorPage('Invalid Request', 'Missing required fields.'));
       }
 
-      // Get schedule
       const { rows } = await tursoExecute(
         'SELECT s.*, u.name, u.email FROM schedules s JOIN users u ON s.musician_id = u.id WHERE s.id = ?',
         [scheduleId]
@@ -232,15 +244,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(404).send(errorPage('Not Found', 'Assignment not found.'));
       }
 
-      const schedule = rows[0] as any;
+      const schedule = rows[0];
       const expectedToken = encodeToken(`${scheduleId}:${schedule.musician_id}:${schedule.date}`);
-      
-      if (token !== expectedToken) {
+
+      if (decodeURIComponent(token) !== expectedToken && token !== expectedToken) {
         return res.status(403).send(errorPage('Invalid Token', 'Token verification failed.'));
       }
 
-      // Update status
       const newStatus = action === 'accept' ? 'accepted' : 'rejected';
+
       await tursoExecute(
         'UPDATE schedules SET status = ?, decline_reason = ? WHERE id = ?',
         [newStatus, declineReason || null, scheduleId]
@@ -254,22 +266,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const adminMessage = `${schedule.name} has ${newStatus} the assignment for ${schedule.role} on ${schedule.date}${declineReason ? `. Reason: ${declineReason}` : ''}`;
 
       for (const admin of admins) {
-        const adminData = admin as any;
         await tursoExecute(
           `INSERT INTO notifications (id, user_id, message, type, read, created_at) 
            VALUES (?, ?, ?, ?, ?, datetime('now'))`,
           [
-            'notif-' + Date.now() + '-' + adminData.id,
-            adminData.id,
+            'notif-' + Date.now() + '-' + admin.id,
+            admin.id,
             adminMessage,
             'info',
-            false
+            false,
           ]
         );
       }
 
-      // Success page
       const successColor = action === 'accept' ? '#22c55e' : '#ef4444';
+
       return res.send(`
         <!DOCTYPE html>
         <html>
@@ -296,10 +307,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             <h1>Response Recorded!</h1>
             <p>Your response has been saved successfully.</p>
             <div class="details">
-              <div class="label">Assignment</div>
-              <div class="value">${schedule.role}</div>
+              <div class="label">Assignment</div><div class="value">${schedule.role}</div>
               <div class="label">Date</div>
-              <div class="value">${new Date(schedule.date).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</div>
+              <div class="value">${new Date(schedule.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</div>
               <div class="label">Status</div>
               <div><span class="status">${newStatus}</span></div>
             </div>

@@ -3,11 +3,24 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 const encodeToken = (data: string): string => Buffer.from(data).toString('base64');
 
+async function parseFormBody(req: VercelRequest): Promise<Record<string, string>> {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk.toString(); });
+    req.on('end', () => {
+      const parsed: Record<string, string> = {};
+      new URLSearchParams(body).forEach((value, key) => {
+        parsed[key] = value;
+      });
+      resolve(parsed);
+    });
+    req.on('error', reject);
+  });
+}
+
 const TURSO_DATABASE_URL = process.env.TURSO_DATABASE_URL;
 const TURSO_AUTH_TOKEN = process.env.TURSO_AUTH_TOKEN;
 
-// ✅ THE FIX: Turso HTTP API returns rows as arrays of {type, value} objects
-// and columns separately. This helper zips them into plain objects.
 async function tursoExecute(sql: string, args: any[] = []) {
   if (!TURSO_DATABASE_URL || !TURSO_AUTH_TOKEN) {
     throw new Error('Database not configured');
@@ -229,7 +242,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // ── POST: Process the confirmation ──────────────────────────────────────
   if (req.method === 'POST') {
     try {
-      const { scheduleId, action, token, declineReason } = req.body;
+      // req.body is undefined for HTML form POSTs on Vercel — parse manually
+      const formData = req.body ?? await parseFormBody(req);
+      const { scheduleId, action, token, declineReason } = formData;
 
       if (!scheduleId || !action || !token) {
         return res.status(400).send(errorPage('Invalid Request', 'Missing required fields.'));

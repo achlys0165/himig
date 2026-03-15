@@ -2,6 +2,14 @@
   "buildCommand": "vite build",
   "framework": "vite",
   "installCommand": "npm install",
+  "functions": {
+    "api/send-email.ts": {
+      "runtime": "@vercel/node@3"
+    },
+    "api/email-action.ts": {
+      "runtime": "@vercel/node@3"
+    }
+  },
   "rewrites": [
     {
       "source": "/api/send-email",

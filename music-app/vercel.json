@@ -12,7 +12,7 @@
       "dest": "/api/email-action.ts"
     },
     {
-      "src": "/((?!api/).*)",
+      "source": "/(.*)",
       "dest": "/index.html"
     }
   ],

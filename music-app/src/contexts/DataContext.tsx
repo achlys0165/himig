@@ -395,8 +395,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const acceptToken = btoa(`${scheduleId}:${assignment.musician_id}:${assignment.date}`);
       const declineToken = acceptToken;// Same token works for both actions
             
-      const acceptUrl = `https://top-himig.vercel.app/api/email-action?scheduleId=${scheduleId}&action=accept&token=${encodeURIComponent(acceptToken)}`;
-      const declineUrl = `https://top-himig.vercel.app/api/email-action?scheduleId=${scheduleId}&action=decline&token=${encodeURIComponent(declineToken)}`;
+      const acceptUrl  = `https://top-himig.vercel.app/email-response?scheduleId=${scheduleId}&action=accept`;
+      const declineUrl = `https://top-himig.vercel.app/email-response?scheduleId=${scheduleId}&action=decline`;
       const appUrl = 'https://top-himig.vercel.app';
     
       const notifId = 'notif-' + Date.now();

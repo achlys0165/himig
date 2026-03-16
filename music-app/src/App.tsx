@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { DataProvider } from './contexts/DataContext';
+import EmailResponse from './pages/EmailResponse';
 
 // Layout
 import Layout from './components/Layout';
@@ -99,6 +100,7 @@ const AppRoutes: React.FC = () => {
       {/* Public Routes - Login at root "/" */}
       <Route path="/" element={<PublicRoute><Login /></PublicRoute>} />
       <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
+      <Route path="/email-response" element={<EmailResponse />} />
       
       {/* Musician Routes */}
       <Route element={<ProtectedLayout />}>

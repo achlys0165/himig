@@ -2,18 +2,18 @@
   "buildCommand": "vite build",
   "framework": "vite",
   "installCommand": "npm install",
-  "rewrites": [
+  "routes": [
     {
-      "source": "/api/send-email",
-      "destination": "/api/send-email.ts"
+      "src": "/api/send-email",
+      "dest": "/api/send-email.ts"
     },
     {
-      "source": "/api/email-action",
-      "destination": "/api/email-action.ts"
+      "src": "/api/email-action",
+      "dest": "/api/email-action.ts"
     },
     {
-      "source": "/((?!api/.*).*)",
-      "destination": "/index.html"
+      "src": "/((?!api/).*)",
+      "dest": "/index.html"
     }
   ],
   "headers": [

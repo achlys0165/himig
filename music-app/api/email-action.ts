@@ -82,7 +82,7 @@ const SCHEDULE_QUERY = `
     u.name          AS musician_name,
     u.email         AS musician_email
   FROM schedules s
-  JOIN users u ON s.musician_id = u.id
+  LEFT JOIN users u ON s.musician_id = u.id
   WHERE s.id = ?
 `;
 
